@@ -19,134 +19,105 @@ namespace NapoleonicWars.UI
             canvas = UIFactory.CreateCanvas("MainMenuCanvas", 10);
             canvas.transform.SetParent(transform);
 
-            // Full-screen — dark, warm, near-black
-            RectTransform bg = UIFactory.CreatePanel(canvas.transform, "Background", new Color(0.04f, 0.02f, 0.02f, 1f));
+            // Background - Solid Prestige Deep Charcoal
+            RectTransform bg = UIFactory.CreatePanel(canvas.transform, "Background", UIFactory.DeepCharcoal);
             bg.anchorMin = Vector2.zero;
             bg.anchorMax = Vector2.one;
             bg.offsetMin = Vector2.zero;
             bg.offsetMax = Vector2.zero;
 
-            // Subtle warm vignette overlay
-            RectTransform vignette = UIFactory.CreatePanel(bg, "Vignette", new Color(0.02f, 0.01f, 0.01f, 0.4f));
-            vignette.anchorMin = Vector2.zero;
-            vignette.anchorMax = Vector2.one;
-            vignette.offsetMin = Vector2.zero;
-            vignette.offsetMax = Vector2.zero;
+            // Subtle warm overlay for depth
+            RectTransform overlay = UIFactory.CreatePanel(bg, "Overlay", new Color(0.05f, 0.04f, 0.03f, 0.3f));
+            overlay.anchorMin = Vector2.zero;
+            overlay.anchorMax = Vector2.one;
+            overlay.offsetMin = Vector2.zero;
+            overlay.offsetMax = Vector2.zero;
 
-            // Center container - responsive sizing (30% width, 60% height, centered)
-            RectTransform center = UIFactory.CreatePanel(bg, "CenterPanel", new Color(0, 0, 0, 0));
-            center.anchorMin = new Vector2(0.35f, 0.18f);
-            center.anchorMax = new Vector2(0.65f, 0.85f);
-            center.offsetMin = Vector2.zero;
-            center.offsetMax = Vector2.zero;
-            center.GetComponent<Image>().raycastTarget = false;
+            // Center content container
+            RectTransform center = UIFactory.CreatePanel(bg, "CenterPanel", Color.clear);
+            center.anchorMin = new Vector2(0.5f, 0.5f);
+            center.anchorMax = new Vector2(0.5f, 0.5f);
+            center.sizeDelta = new Vector2(400, 600);
+            center.anchoredPosition = new Vector2(0, -20);
 
-            UIFactory.AddVerticalLayout(center.gameObject, 8f, new RectOffset(0, 0, 0, 0));
+            UIFactory.AddVerticalLayout(center.gameObject, 12f, new RectOffset(20, 20, 20, 20));
 
-            // ===== TITLE — Imperial gold with deep shadow =====
-            Text title = UIFactory.CreateText(center, "Title", "NAPOLEONIC WARS", 56, TextAnchor.MiddleCenter, UIFactory.GoldAccent);
+            // ===== TITLE =====
+            Text title = UIFactory.CreateText(center, "Title", "NAPOLEONIC WARS", 48, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
             title.fontStyle = FontStyle.Bold;
-            UIFactory.AddLayoutElement(title.gameObject, 72);
-            // Double outline for impactful title
+            UIFactory.AddLayoutElement(title.gameObject, preferredHeight: 60);
+            
             Outline titleOutline = title.gameObject.AddComponent<Outline>();
-            titleOutline.effectColor = new Color(0.40f, 0.25f, 0.08f, 0.7f);
-            titleOutline.effectDistance = new Vector2(3, 3);
-            Shadow titleShadow = title.gameObject.AddComponent<Shadow>();
-            titleShadow.effectColor = new Color(0, 0, 0, 0.9f);
-            titleShadow.effectDistance = new Vector2(4f, -4f);
+            titleOutline.effectColor = new Color(0.2f, 0.15f, 0.05f, 0.8f);
+            titleOutline.effectDistance = new Vector2(2, 2);
 
-            // Subtitle — parchment tone, italic
-            Text subtitle = UIFactory.CreateText(center, "Subtitle", "Total War Style RTS", 18, TextAnchor.MiddleCenter, UIFactory.ParchmentBeige);
-            subtitle.fontStyle = FontStyle.Italic;
-            UIFactory.AddLayoutElement(subtitle.gameObject, 30);
+            Text subtitle = UIFactory.CreateText(center, "Subtitle", "GRAND STRATEGY & RTS", 14, TextAnchor.MiddleCenter, UIFactory.SilverText);
+            subtitle.fontStyle = FontStyle.Normal;
+            UIFactory.AddLayoutElement(subtitle.gameObject, preferredHeight: 20);
 
-            // ===== Ornamental separator =====
-            RectTransform ornSep = UIFactory.CreateOrnamentalSeparator(center);
-            UIFactory.AddLayoutElement(ornSep.gameObject, 22);
+            UIFactory.CreateSeparator(center);
+            UIFactory.AddLayoutElement(center.GetChild(center.childCount-1).gameObject, preferredHeight: 20);
 
-            // Spacer
-            GameObject spacer1 = new GameObject("Spacer");
-            spacer1.transform.SetParent(center, false);
-            spacer1.AddComponent<RectTransform>();
-            UIFactory.AddLayoutElement(spacer1, 12);
-
-            // ===== CAMPAIGN — Ornate Warhammer button =====
-            Button btnCampaign = UIFactory.CreateWarhammerButton(center, "BtnCampaign", "CAMPAIGN", 22,
+            // ===== MENU BUTTONS =====
+            Button btnCampaign = UIFactory.CreateButton(center, "BtnCampaign", "BEGIN CAMPAIGN", 16,
                 () => LoadingScreenUI.LoadSceneWithScreen("FactionSelect"));
-            UIFactory.AddLayoutElement(btnCampaign.gameObject, 58);
+            UIFactory.AddLayoutElement(btnCampaign.gameObject, preferredHeight: 48);
+            btnCampaign.GetComponent<Image>().color = UIFactory.ImperialCrimson;
 
-            // ===== QUICK BATTLE =====
-            Button btnBattle = UIFactory.CreateWarhammerButton(center, "BtnBattle", "QUICK BATTLE", 22,
+            Button btnBattle = UIFactory.CreateButton(center, "BtnBattle", "QUICK BATTLE", 16,
                 () => LoadingScreenUI.LoadSceneWithScreen("Battle"));
-            UIFactory.AddLayoutElement(btnBattle.gameObject, 58);
+            UIFactory.AddLayoutElement(btnBattle.gameObject, preferredHeight: 48);
 
-            // ===== MULTIPLAYER =====
-            Button btnMulti = UIFactory.CreateWarhammerButton(center, "BtnMultiplayer", "MULTIPLAYER", 22,
+            Button btnMulti = UIFactory.CreateButton(center, "BtnMultiplayer", "MULTIPLAYER", 16,
                 () => LoadingScreenUI.LoadSceneWithScreen("Lobby"));
-            UIFactory.AddLayoutElement(btnMulti.gameObject, 58);
+            UIFactory.AddLayoutElement(btnMulti.gameObject, preferredHeight: 48);
 
-            // ===== Difficulty selector =====
+            // ===== DIFFICULTY =====
             GameObject diffRow = new GameObject("DifficultyRow");
             diffRow.transform.SetParent(center, false);
-            diffRow.AddComponent<RectTransform>();
-            UIFactory.AddLayoutElement(diffRow, 42);
-            UIFactory.AddHorizontalLayout(diffRow, 6f, new RectOffset(30, 30, 4, 4));
+            UIFactory.AddHorizontalLayout(diffRow, 4f);
+            UIFactory.AddLayoutElement(diffRow, preferredHeight: 32);
 
-            Text diffLabel = UIFactory.CreateText(diffRow.transform, "DiffLabel", "Difficulty:", 14, TextAnchor.MiddleCenter, UIFactory.TextGrey);
-            UIFactory.AddLayoutElement(diffLabel.gameObject, 30, 80);
+            string[] diffs = { "Recruit", "Easy", "Normal", "Hard", "Legend" };
+            NapoleonicWars.Core.DifficultyLevel[] levels = { 
+                NapoleonicWars.Core.DifficultyLevel.Recruit, 
+                NapoleonicWars.Core.DifficultyLevel.Easy, 
+                NapoleonicWars.Core.DifficultyLevel.Normal, 
+                NapoleonicWars.Core.DifficultyLevel.Hard, 
+                NapoleonicWars.Core.DifficultyLevel.Legendary 
+            };
+            
+            Button[] diffBtns = new Button[5];
+            for(int i=0; i<5; i++)
+            {
+                int idx = i;
+                diffBtns[i] = UIFactory.CreateButton(diffRow.transform, "Diff_" + diffs[i], diffs[i].Substring(0, 1), 11, 
+                    () => SetDifficulty(levels[idx]));
+                UIFactory.AddLayoutElement(diffBtns[idx].gameObject, flexibleWidth: 1, preferredHeight: 28);
+                if (i == 0) diffRecruitImg = diffBtns[i].GetComponent<Image>();
+                else if (i == 1) diffEasyImg = diffBtns[i].GetComponent<Image>();
+                else if (i == 2) diffNormalImg = diffBtns[i].GetComponent<Image>();
+                else if (i == 3) diffHardImg = diffBtns[i].GetComponent<Image>();
+                else if (i == 4) diffLegendaryImg = diffBtns[i].GetComponent<Image>();
+            }
 
-            Button btnRecruit = UIFactory.CreateGoldButton(diffRow.transform, "BtnRecruit", "Recruit", 11, () => SetDifficulty(NapoleonicWars.Core.DifficultyLevel.Recruit));
-            UIFactory.AddLayoutElement(btnRecruit.gameObject, 32, 72);
-            Button btnEasy = UIFactory.CreateGoldButton(diffRow.transform, "BtnEasy", "Easy", 11, () => SetDifficulty(NapoleonicWars.Core.DifficultyLevel.Easy));
-            UIFactory.AddLayoutElement(btnEasy.gameObject, 32, 72);
-            Button btnNormal = UIFactory.CreateGoldButton(diffRow.transform, "BtnNormal", "Normal", 11, () => SetDifficulty(NapoleonicWars.Core.DifficultyLevel.Normal));
-            UIFactory.AddLayoutElement(btnNormal.gameObject, 32, 72);
-            Button btnHard = UIFactory.CreateGoldButton(diffRow.transform, "BtnHard", "Hard", 11, () => SetDifficulty(NapoleonicWars.Core.DifficultyLevel.Hard));
-            UIFactory.AddLayoutElement(btnHard.gameObject, 32, 72);
-            Button btnLegendary = UIFactory.CreateGoldButton(diffRow.transform, "BtnLegendary", "Legend", 11, () => SetDifficulty(NapoleonicWars.Core.DifficultyLevel.Legendary));
-            UIFactory.AddLayoutElement(btnLegendary.gameObject, 32, 72);
+            // ===== QUIT =====
+            UIFactory.CreateSeparator(center);
+            UIFactory.AddLayoutElement(center.GetChild(center.childCount-1).gameObject, preferredHeight: 20);
 
-            diffRecruitImg = btnRecruit.GetComponent<Image>();
-            diffEasyImg = btnEasy.GetComponent<Image>();
-            diffNormalImg = btnNormal.GetComponent<Image>();
-            diffHardImg = btnHard.GetComponent<Image>();
-            diffLegendaryImg = btnLegendary.GetComponent<Image>();
-            UpdateDifficultyButtons();
-
-            // Spacer
-            GameObject spacer2 = new GameObject("Spacer2");
-            spacer2.transform.SetParent(center, false);
-            spacer2.AddComponent<RectTransform>();
-            UIFactory.AddLayoutElement(spacer2, 8);
-
-            // ===== QUIT — Deep crimson, menacing =====
-            Button btnQuit = UIFactory.CreateGoldButton(center, "BtnQuit", "QUIT", 16, () =>
+            Button btnQuit = UIFactory.CreateButton(center, "BtnQuit", "EXIT TO DESKTOP", 14, () =>
             {
                 Application.Quit();
                 #if UNITY_EDITOR
                 UnityEditor.EditorApplication.isPlaying = false;
                 #endif
             });
-            UIFactory.AddLayoutElement(btnQuit.gameObject, 44);
-            btnQuit.GetComponent<Image>().color = UIFactory.CrimsonDeep;
-            btnQuit.GetComponentInChildren<Text>().color = new Color(0.85f, 0.35f, 0.30f);
+            UIFactory.AddLayoutElement(btnQuit.gameObject, preferredHeight: 40);
+            btnQuit.GetComponentInChildren<Text>().color = UIFactory.SilverText;
 
-            // Credits — warm grey
-            Text credits = UIFactory.CreateText(bg, "Credits", "Made with Unity 6  |  Napoleonic Wars RTS", 12, TextAnchor.MiddleCenter, UIFactory.TextGrey);
-            RectTransform credRT = credits.GetComponent<RectTransform>();
-            credRT.anchorMin = new Vector2(0, 0);
-            credRT.anchorMax = new Vector2(1, 0);
-            credRT.offsetMin = new Vector2(0, 8);
-            credRT.offsetMax = new Vector2(0, 32);
-
-            // Version
-            Text version = UIFactory.CreateText(bg, "Version", "v2.0", 10, TextAnchor.MiddleRight, UIFactory.TextGrey);
-            RectTransform verRT = version.GetComponent<RectTransform>();
-            verRT.anchorMin = new Vector2(1, 0);
-            verRT.anchorMax = new Vector2(1, 0);
-            verRT.pivot = new Vector2(1, 0);
-            verRT.anchoredPosition = new Vector2(-15, 10);
-            verRT.sizeDelta = new Vector2(60, 20);
+            // Footer
+            Text credits = UIFactory.CreateText(bg, "Credits", "PRESTIGE EDITION  |  v2.5", 10, TextAnchor.MiddleCenter, UIFactory.SilverText);
+            UIFactory.SetAnchors(credits.gameObject, new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 10), new Vector2(0, 30));
         }
         private void SetDifficulty(NapoleonicWars.Core.DifficultyLevel level)
         {
@@ -160,8 +131,8 @@ namespace NapoleonicWars.UI
             var diff = NapoleonicWars.Core.DifficultySettings.Instance;
             NapoleonicWars.Core.DifficultyLevel current = diff != null ? diff.CurrentDifficulty : NapoleonicWars.Core.DifficultyLevel.Normal;
 
-            Color active = UIFactory.ButtonActive;
-            Color inactive = UIFactory.ButtonNormal;
+            Color active = UIFactory.ImperialCrimson;
+            Color inactive = UIFactory.DeepCharcoal;
 
             if (diffRecruitImg != null) diffRecruitImg.color = current == NapoleonicWars.Core.DifficultyLevel.Recruit ? active : inactive;
             if (diffEasyImg != null) diffEasyImg.color = current == NapoleonicWars.Core.DifficultyLevel.Easy ? active : inactive;

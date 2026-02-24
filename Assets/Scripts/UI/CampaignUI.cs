@@ -65,6 +65,7 @@ namespace NapoleonicWars.UI
         private GameObject cityPanel;
         private Text cityNameText, cityLevelText;
         private GameObject cityOverviewTab, cityBuildingsTab, cityMilitaryTab, cityIndustryTab;
+        private Transform cityOverviewContent, cityBuildingsContent, cityMilitaryContent, cityIndustryContent;
         private int activeCityTab = 0; // 0=Overview, 1=Buildings, 2=Military, 3=Industry
         private Button[] cityTabButtons;
         private ProvinceData openCityProvince = null;
@@ -347,7 +348,7 @@ namespace NapoleonicWars.UI
             BuildMapPanel();
             // BuildProvincePanel(); — OBSOLETE: province info shown via CityUIPanel now
             BuildArmyPanel();
-            BuildDiplomacyPanel();
+            // DiplomacyUI now creates itself on demand via DiplomacyUI.Create()
             BuildBuildMenu();
 
             // === BOTTOM BAR (Total War style — end turn, faction, events) ===
@@ -396,11 +397,7 @@ namespace NapoleonicWars.UI
                     LogisticsUI.Create(navBar, CampaignManager.Instance);
                     break;
                 case NavigationBar.NavPanel.Diplomacy:
-                    if (diplomacyPanel != null)
-                    {
-                        diplomacyPanel.SetActive(true);
-                        RefreshDiplomacy();
-                    }
+                    DiplomacyUI.Create(navBar, CampaignManager.Instance);
                     break;
                 default:
                     Debug.Log($"[CampaignUI] Panel not yet implemented: {panel}");
@@ -568,26 +565,67 @@ namespace NapoleonicWars.UI
         // ===================== BUILD MENU =====================
         private void BuildBuildMenu()
         {
-            RectTransform panel = UIFactory.CreateOrnatePanel(canvas.transform, "BuildMenuPanel",
-                new Color(0.07f, 0.05f, 0.04f, 0.97f));
+            RectTransform panel = UIFactory.CreateBorderedPanel(canvas.transform, "BuildMenuPanel",
+                new Color(0.06f, 0.06f, 0.07f, 0.97f), UIFactory.MutedGold, 2f);
             panel.anchorMin = new Vector2(0.5f, 0.5f);
             panel.anchorMax = new Vector2(0.5f, 0.5f);
             panel.pivot = new Vector2(0.5f, 0.5f);
-            panel.sizeDelta = new Vector2(320, 300);
+            panel.sizeDelta = new Vector2(520, 580);
             buildMenuPanel = panel.gameObject;
 
-            Transform inner = panel.Find("Inner");
-            UIFactory.AddVerticalLayout(inner.gameObject, 3f, new RectOffset(12, 12, 10, 10));
+            var vlg = panel.gameObject.AddComponent<VerticalLayoutGroup>();
+            vlg.spacing = 0f;
+            vlg.padding = new RectOffset(0, 0, 0, 0);
+            vlg.childControlHeight = true;
+            vlg.childForceExpandHeight = false;
+            vlg.childControlWidth = true;
+            vlg.childForceExpandWidth = true;
 
-            RectTransform titleBanner = UIFactory.CreateBannerHeader(inner, "TitleBanner", "BUILD", 18);
-            UIFactory.AddLayoutElement(titleBanner.gameObject, 36);
+            // Premium header
+            RectTransform headerBg = UIFactory.CreateGradientPanel(panel, "HeaderBanner",
+                new Color(0.14f, 0.12f, 0.10f), new Color(0.06f, 0.06f, 0.07f));
+            UIFactory.AddLayoutElement(headerBg.gameObject, preferredHeight: 50);
+            UIFactory.AddHorizontalLayout(headerBg.gameObject, 10f, new RectOffset(20, 20, 10, 10));
+            
+            Text embl = UIFactory.CreateText(headerBg, "Embl", "⚒", 24, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
+            UIFactory.AddLayoutElement(embl.gameObject, preferredWidth: 36);
+            Text title = UIFactory.CreateText(headerBg, "Title", "CONSTRUCTION", 20, TextAnchor.MiddleLeft, UIFactory.EmpireGold);
+            title.fontStyle = FontStyle.Bold;
+            UIFactory.AddLayoutElement(title.gameObject, flexibleWidth: 1);
 
-            var (scroll, content) = UIFactory.CreateScrollView(inner, "BuildScroll");
-            UIFactory.AddLayoutElement(scroll.gameObject, 180, flexibleWidth: 1);
+            RectTransform hSep = UIFactory.CreateGlowSeparator(panel, "HSep", false);
+            UIFactory.AddLayoutElement(hSep.gameObject, preferredHeight: 3);
+            
+            // Scrollable content area with padding
+            GameObject contentPad = new GameObject("ContentPad");
+            contentPad.transform.SetParent(panel, false);
+            contentPad.AddComponent<RectTransform>();
+            var cpvlg = contentPad.AddComponent<VerticalLayoutGroup>();
+            cpvlg.spacing = 0f;
+            cpvlg.padding = new RectOffset(14, 14, 8, 8);
+            cpvlg.childControlHeight = true;
+            cpvlg.childForceExpandHeight = true;
+            cpvlg.childControlWidth = true;
+            cpvlg.childForceExpandWidth = true;
+            UIFactory.AddLayoutElement(contentPad, flexibleHeight: 1, flexibleWidth: 1);
+
+            var (scroll, content) = UIFactory.CreateScrollView(contentPad.transform, "BuildScroll");
+            UIFactory.AddLayoutElement(scroll.gameObject, 100, flexibleWidth: 1, flexibleHeight: 1);
             buildMenuContainer = content;
-
-            Button btnCancel = UIFactory.CreateGoldButton(inner, "BtnCancel", "Cancel", 13, () => buildMenuPanel.SetActive(false));
-            UIFactory.AddLayoutElement(btnCancel.gameObject, 28);
+            
+            // Bottom bar
+            GameObject bottomBar = new GameObject("BottomBar");
+            bottomBar.transform.SetParent(panel, false);
+            bottomBar.AddComponent<RectTransform>();
+            Image bbBg = bottomBar.AddComponent<Image>();
+            bbBg.color = new Color(0.05f, 0.05f, 0.06f);
+            UIFactory.AddHorizontalLayout(bottomBar, 0f, new RectOffset(14, 14, 8, 8));
+            UIFactory.AddLayoutElement(bottomBar, preferredHeight: 44);
+            
+            Button btnCancel = UIFactory.CreateButton(bottomBar.transform, "BtnCancel", "✕ ANNULER", 13, 
+                () => buildMenuPanel.SetActive(false));
+            UIFactory.AddLayoutElement(btnCancel.gameObject, flexibleWidth: 1, preferredHeight: 30);
+            btnCancel.GetComponent<Image>().color = new Color(0.15f, 0.08f, 0.08f);
 
             buildMenuPanel.SetActive(false);
         }
@@ -1126,12 +1164,12 @@ namespace NapoleonicWars.UI
                 string label = $"{BuildingInfo.GetName(type)} ({cost}g, {time}t)";
 
                 BuildingType capturedType = type;
-                Button btn = UIFactory.CreateGoldButton(buildMenuContainer, $"Btn_{type}", label, 12, () =>
+                Button btn = UIFactory.CreateGoldButton(buildMenuContainer, $"Btn_{type}", label, 14, () =>
                 {
                     CampaignManager.Instance.BuildInProvince(selectedProvinceId, buildSlotIndex, capturedType);
                     buildMenuPanel.SetActive(false);
                 });
-                UIFactory.AddLayoutElement(btn.gameObject, 28);
+                UIFactory.AddLayoutElement(btn.gameObject, 38);
             }
 
             buildMenuPanel.SetActive(true);
@@ -1161,86 +1199,119 @@ namespace NapoleonicWars.UI
         
         private void BuildCityPanel()
         {
-            // Main panel — right side, large
-            RectTransform panel = UIFactory.CreateOrnatePanel(canvas.transform, "CityPanel",
-                new Color(0.10f, 0.11f, 0.10f, 0.96f));
-            panel.anchorMin = new Vector2(0.60f, 0.06f);
+            // Main panel — right side, large, ornate with gold border
+            RectTransform panel = UIFactory.CreateBorderedPanel(canvas.transform, "CityPanel", 
+                new Color(0.06f, 0.06f, 0.07f, 0.97f), UIFactory.MutedGold, 2f);
+            panel.anchorMin = new Vector2(0.58f, 0.06f);
             panel.anchorMax = new Vector2(0.99f, 0.94f);
             panel.offsetMin = Vector2.zero;
             panel.offsetMax = Vector2.zero;
             cityPanel = panel.gameObject;
     
-            Transform inner = panel.transform.Find("Inner");
-            var vlg = UIFactory.AddVerticalLayout(inner.gameObject, 3f, new RectOffset(12, 12, 8, 8));
-            vlg.childControlHeight = true;  // Required for flexibleHeight on scroll views to work
+            // Inner layout
+            var vlg = panel.gameObject.AddComponent<VerticalLayoutGroup>();
+            vlg.spacing = 0f;
+            vlg.padding = new RectOffset(0, 0, 0, 0);
+            vlg.childControlHeight = true;
             vlg.childForceExpandHeight = false;
+            vlg.childControlWidth = true;
+            vlg.childForceExpandWidth = true;
             
-            // === HEADER ===
-            GameObject headerRow = new GameObject("HeaderRow");
-            headerRow.transform.SetParent(inner, false);
-            headerRow.AddComponent<RectTransform>();
-            UIFactory.AddHorizontalLayout(headerRow, 6f);
-            UIFactory.AddLayoutElement(headerRow, 32);
+            // === PREMIUM HEADER BANNER ===
+            RectTransform headerBg = UIFactory.CreateGradientPanel(panel, "HeaderBanner",
+                new Color(0.14f, 0.12f, 0.10f), new Color(0.06f, 0.06f, 0.07f));
+            UIFactory.AddLayoutElement(headerBg.gameObject, preferredHeight: 56);
             
-            cityNameText = UIFactory.CreateText(headerRow.transform, "CityName", "City", 20,
-                TextAnchor.MiddleLeft, UIFactory.GoldAccent);
+            UIFactory.AddHorizontalLayout(headerBg.gameObject, 10f, new RectOffset(16, 12, 8, 8));
+            
+            // Gold emblem
+            Text emblem = UIFactory.CreateText(headerBg, "Emblem", "🏛", 28, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
+            UIFactory.AddLayoutElement(emblem.gameObject, preferredWidth: 40);
+            
+            // City name + level column
+            GameObject nameCol = new GameObject("NameCol");
+            nameCol.transform.SetParent(headerBg, false);
+            var nameVlg = nameCol.AddComponent<VerticalLayoutGroup>();
+            nameVlg.spacing = 0f; nameVlg.childForceExpandWidth = true; nameVlg.childForceExpandHeight = false;
+            UIFactory.AddLayoutElement(nameCol, flexibleWidth: 1);
+            
+            cityNameText = UIFactory.CreateText(nameCol.transform, "CityName", "CITY", 20,
+                TextAnchor.MiddleLeft, UIFactory.EmpireGold);
             cityNameText.fontStyle = FontStyle.Bold;
-            Shadow ns = cityNameText.gameObject.AddComponent<Shadow>();
-            ns.effectColor = new Color(0, 0, 0, 0.8f);
-            ns.effectDistance = new Vector2(1, -1);
-            UIFactory.AddLayoutElement(cityNameText.gameObject, flexibleWidth: 1);
             
-            cityLevelText = UIFactory.CreateText(headerRow.transform, "CityLevel", "", 14,
-                TextAnchor.MiddleRight, UIFactory.ParchmentBeige);
-            UIFactory.AddLayoutElement(cityLevelText.gameObject, 120);
+            cityLevelText = UIFactory.CreateText(nameCol.transform, "CityLevel", "", 11,
+                TextAnchor.MiddleLeft, UIFactory.Parchment);
             
-            Button closeBtn = UIFactory.CreateGoldButton(headerRow.transform, "CloseBtn", "✕", 16,
+            // Close button — elegant X
+            Button closeBtn = UIFactory.CreateButton(headerBg, "CloseBtn", "✕", 16,
                 () => CloseCityPanel());
-            var closeLe = UIFactory.AddLayoutElement(closeBtn.gameObject, 32, 28);
-            closeLe.minWidth = 28;
-            closeLe.minHeight = 28;
+            UIFactory.AddLayoutElement(closeBtn.gameObject, preferredWidth: 32, preferredHeight: 32);
+            closeBtn.GetComponent<Image>().color = new Color(0.3f, 0.1f, 0.1f, 0.8f);
             
-            RectTransform sep = UIFactory.CreateOrnamentalSeparator(inner);
-            UIFactory.AddLayoutElement(sep.gameObject, 12);
+            // Gold separator line under header
+            RectTransform hSep = UIFactory.CreateGlowSeparator(panel, "HeaderSep", false);
+            UIFactory.AddLayoutElement(hSep.gameObject, preferredHeight: 3);
             
-            // === TAB BAR ===
+            // === TAB BAR — Gold-bordered tabs ===
             GameObject tabBar = new GameObject("TabBar");
-            tabBar.transform.SetParent(inner, false);
+            tabBar.transform.SetParent(panel, false);
             tabBar.AddComponent<RectTransform>();
-            UIFactory.AddHorizontalLayout(tabBar, 3f);
-            UIFactory.AddLayoutElement(tabBar, 30);
+            Image tabBarBg = tabBar.AddComponent<Image>();
+            tabBarBg.color = new Color(0.05f, 0.05f, 0.06f, 1f);
+            UIFactory.AddHorizontalLayout(tabBar, 2f, new RectOffset(6, 6, 4, 4));
+            UIFactory.AddLayoutElement(tabBar, preferredHeight: 36);
             
-            string[] tabNames = { "Overview", "Buildings", "Military", "Industry" };
+            string[] tabNames = { "⚜ VUE", "🏗 BÂTIMENTS", "⚔ MILITAIRE", "🏭 INDUSTRIE" };
             cityTabButtons = new Button[4];
             for (int t = 0; t < 4; t++)
             {
                 int tabIdx = t;
-                cityTabButtons[t] = UIFactory.CreateGoldButton(tabBar.transform, $"Tab_{tabNames[t]}",
-                    tabNames[t], 12, () => { activeCityTab = tabIdx; cityPanelDirty = true; });
-                UIFactory.AddLayoutElement(cityTabButtons[t].gameObject, 28, flexibleWidth: 1);
+                cityTabButtons[t] = UIFactory.CreateButton(tabBar.transform, $"Tab_{t}",
+                    tabNames[t], 10, () => { activeCityTab = tabIdx; RefreshCityPanel(); });
+                UIFactory.AddLayoutElement(cityTabButtons[t].gameObject, flexibleWidth: 1, preferredHeight: 28);
             }
             
-            RectTransform sep2 = UIFactory.CreateOrnamentalSeparator(inner);
-            UIFactory.AddLayoutElement(sep2.gameObject, 8);
+            // Thin separator under tabs
+            RectTransform tSep = UIFactory.CreateSeparator(panel);
+            UIFactory.AddLayoutElement(tSep.gameObject, preferredHeight: 2);
             
-            // === TAB CONTENT CONTAINERS ===
-            cityOverviewTab = CreateTabContainer(inner, "OverviewTab");
-            cityBuildingsTab = CreateTabContainer(inner, "BuildingsTab");
-            cityMilitaryTab = CreateTabContainer(inner, "MilitaryTab");
-            cityIndustryTab = CreateTabContainer(inner, "IndustryTab");
+            // === TAB CONTENT CONTAINERS — with padding ===
+            GameObject contentArea = new GameObject("ContentArea");
+            contentArea.transform.SetParent(panel, false);
+            contentArea.AddComponent<RectTransform>();
+            var cavlg = contentArea.AddComponent<VerticalLayoutGroup>();
+            cavlg.spacing = 0f;
+            cavlg.padding = new RectOffset(12, 12, 8, 8);
+            cavlg.childControlHeight = true;
+            cavlg.childForceExpandHeight = true;
+            cavlg.childControlWidth = true;
+            cavlg.childForceExpandWidth = true;
+            UIFactory.AddLayoutElement(contentArea, flexibleHeight: 1, flexibleWidth: 1);
+            
+            (cityOverviewTab, cityOverviewContent) = CreateTabContainerWithContent(contentArea.transform, "OverviewTab");
+            (cityBuildingsTab, cityBuildingsContent) = CreateTabContainerWithContent(contentArea.transform, "BuildingsTab");
+            (cityMilitaryTab, cityMilitaryContent) = CreateTabContainerWithContent(contentArea.transform, "MilitaryTab");
+            (cityIndustryTab, cityIndustryContent) = CreateTabContainerWithContent(contentArea.transform, "IndustryTab");
             
             cityPanel.SetActive(false);
         }
         
-        private GameObject CreateTabContainer(Transform parent, string name)
+        private (GameObject go, Transform content) CreateTabContainerWithContent(Transform parent, string name)
         {
             var (scroll, content) = UIFactory.CreateScrollView(parent, name);
             UIFactory.AddLayoutElement(scroll.gameObject, 100, flexibleWidth: 1, flexibleHeight: 1);
-            return scroll.gameObject;
+            return (scroll.gameObject, content);
         }
         
         private Transform GetTabContent(GameObject tab)
         {
+            // Use stored references first
+            if (tab == cityOverviewTab && cityOverviewContent != null) return cityOverviewContent;
+            if (tab == cityBuildingsTab && cityBuildingsContent != null) return cityBuildingsContent;
+            if (tab == cityMilitaryTab && cityMilitaryContent != null) return cityMilitaryContent;
+            if (tab == cityIndustryTab && cityIndustryContent != null) return cityIndustryContent;
+            
+            // Fallback: navigate hierarchy
             if (tab == null || tab.transform.childCount == 0) return null;
             Transform viewport = tab.transform.GetChild(0);
             if (viewport == null || viewport.childCount == 0) return null;
@@ -1263,19 +1334,26 @@ namespace NapoleonicWars.UI
             CityData city = CampaignManager.Instance.GetCityForProvince(prov.provinceId);
             
             // Update header
-            cityNameText.text = city != null ? city.cityName : prov.provinceName;
+            cityNameText.text = city != null ? city.cityName.ToUpper() : prov.provinceName.ToUpper();
             cityLevelText.text = city != null 
-                ? $"Lv.{city.cityLevel} — {city.CityLevelName}" 
-                : $"{prov.owner}";
+                ? $"LV.{city.cityLevel} — {city.CityLevelName.ToUpper()}" 
+                : $"{prov.owner.ToString().ToUpper()} TERRITORY";
             
-            // Highlight active tab
-            Color activeCol = new Color(0.85f, 0.7f, 0.3f);
-            Color inactiveCol = new Color(0.5f, 0.45f, 0.35f);
+            // Highlight active tab — premium gold style
             for (int t = 0; t < 4; t++)
             {
-                var colors = cityTabButtons[t].colors;
-                colors.normalColor = t == activeCityTab ? activeCol : inactiveCol;
-                cityTabButtons[t].colors = colors;
+                bool isActive = (t == activeCityTab);
+                Image tabImg = cityTabButtons[t].GetComponent<Image>();
+                tabImg.color = isActive 
+                    ? new Color(0.18f, 0.14f, 0.08f, 1f)  // warm amber bg
+                    : new Color(0.08f, 0.08f, 0.09f, 1f); // dark bg
+                
+                Text txt = cityTabButtons[t].GetComponentInChildren<Text>();
+                if (txt != null)
+                {
+                    txt.color = isActive ? UIFactory.EmpireGold : new Color(0.45f, 0.42f, 0.38f);
+                    txt.fontStyle = isActive ? FontStyle.Bold : FontStyle.Normal;
+                }
             }
             
             cityOverviewTab.SetActive(activeCityTab == 0);
@@ -1321,69 +1399,134 @@ namespace NapoleonicWars.UI
             if (content == null) return;
             ClearContent(content);
             
-            Color gold = UIFactory.GoldAccent;
-            Color beige = UIFactory.ParchmentBeige;
-            Color green = new Color(0.5f, 0.8f, 0.3f);
-            Color grey = new Color(0.6f, 0.6f, 0.65f);
-            Color red = new Color(0.8f, 0.3f, 0.2f);
-            Color purple = new Color(0.7f, 0.5f, 0.9f);
-            Color blue = new Color(0.4f, 0.7f, 0.9f);
-            
-            // CITY INFO
-            AddInfoRow(content, city != null ? city.cityName : prov.provinceName, gold, 16, true);
-            AddInfoRow(content, $"Owner: {prov.owner}", beige);
-            if (city != null)
-                AddInfoRow(content, $"City Level: {city.cityLevel} — {city.CityLevelName}", gold);
-            AddSpacer(content, 6);
-            
-            // POPULATION
-            AddSectionLabel(content, "POPULATION");
+            // === HEADER: City Level & Growth ===
             if (city != null)
             {
-                AddInfoRow(content, $"  Total: {city.population:N0} / {city.maxPopulation:N0}", beige);
-                AddInfoRow(content, $"  Workers: {city.populationData.workers:N0} ({city.populationData.WorkerRatio:P0})", beige);
-                AddInfoRow(content, $"  Bourgeois: {city.populationData.bourgeois:N0} ({city.populationData.BourgeoisRatio:P0})", gold);
-                AddInfoRow(content, $"  Nobles: {city.populationData.nobles:N0} ({city.populationData.NobleRatio:P0})", purple);
-                if (city.NextLevelPopulation > 0)
+                string levelName = CityLevelThresholds.GetLevelName(city.cityLevel);
+                int nextThresh = CityLevelThresholds.GetNextThreshold(city.cityLevel);
+                string growthStr = nextThresh > 0 ? $" → {nextThresh:N0} pop pour Nv.{city.cityLevel + 1}" : " (Max)";
+                AddSectionLabel(content, $"🏛 {levelName.ToUpper()} — NIVEAU {city.cityLevel}{growthStr}");
+                
+                // Population progress bar
+                if (nextThresh > 0)
                 {
-                    float prog = Mathf.Clamp01((float)city.population / city.NextLevelPopulation);
-                    AddInfoRow(content, $"  Next: {CityLevelThresholds.GetLevelName(city.cityLevel + 1)} at {city.NextLevelPopulation:N0} ({prog:P0})", grey);
+                    int prevThresh = city.cityLevel > 1 ? CityLevelThresholds.GetNextThreshold(city.cityLevel - 1) : 0;
+                    float progress = (float)(city.population - prevThresh) / Mathf.Max(1, nextThresh - prevThresh);
+                    var (bg, fill) = UIFactory.CreateProgressBar(content, "CityProg", UIFactory.EmpireGold);
+                    UIFactory.AddLayoutElement(bg.gameObject, preferredHeight: 10);
+                    fill.GetComponent<RectTransform>().anchorMax = new Vector2(Mathf.Clamp01(progress), 1f);
                 }
             }
-            else
-            {
-                AddInfoRow(content, $"  Population: {prov.population:N0}", beige);
-            }
-            AddSpacer(content, 6);
             
-            // ECONOMY
-            AddSectionLabel(content, "ECONOMY");
-            AddInfoRow(content, $"  Gold income: +{prov.goldIncome:F0}/turn", gold);
-            AddInfoRow(content, $"  Food: +{prov.foodProduction:F0}/turn", green);
-            AddInfoRow(content, $"  Iron: +{prov.ironProduction:F0}/turn", grey);
+            AddSpacer(content, 4);
+
+            // === IMPERIAL SOCIETY ===
+            UIFactory.CreateSectionHeader(content, "SEC_SOC", "⚜ Société Impériale", 13);
             if (city != null)
             {
-                AddInfoRow(content, $"  Bourgeois bonus: +{city.BourgeoisGoldBonus:F1}g/turn", gold);
-                AddInfoRow(content, $"  Stored food: {city.storedFood:F0}", green);
-                AddInfoRow(content, $"  Stored iron: {city.storedIron:F0}", grey);
-                AddInfoRow(content, $"  Stored goods: {city.storedGoods:F0}", beige);
-            }
-            AddSpacer(content, 6);
-            
-            // DEFENSE
-            AddSectionLabel(content, "DEFENSE & STABILITY");
-            if (city != null)
-            {
-                Color oCol = city.publicOrder > 70 ? green : city.publicOrder > 40 ? gold : red;
-                AddInfoRow(content, $"  Public Order: {city.publicOrder:F0}/100", oCol);
-                AddInfoRow(content, $"  Fortification: Lv.{city.GetFortificationLevel()}", beige);
-                AddInfoRow(content, $"  Garrison: {city.garrisonSize}/{city.maxGarrison}", beige);
-                AddInfoRow(content, $"  Research bonus: +{city.NobleResearchBonus:F1}", blue);
+                AddInfoRow(content, "Population totale", $"{city.population:N0} habitants", UIFactory.Porcelain);
+                
+                // Population classes with visual bars
+                float nobleR = city.populationData.NobleRatio;
+                float bourgeoisR = city.populationData.BourgeoisRatio;
+                float workerR = city.populationData.WorkerRatio;
+                
+                AddInfoRow(content, "  👑 Noblesse", $"{(nobleR * 100):F0}% ({city.populationData.nobles:N0})", new Color(0.7f, 0.5f, 0.9f));
+                AddInfoRow(content, "  💼 Bourgeoisie", $"{(bourgeoisR * 100):F0}% ({city.populationData.bourgeois:N0})", UIFactory.EmpireGold);
+                AddInfoRow(content, "  ⚒ Ouvriers", $"{(workerR * 100):F0}% ({city.populationData.workers:N0})", UIFactory.SilverText);
+                AddInfoRow(content, "Bâtiments", $"{city.buildings.Count}/{city.maxBuildings} ({CityLevelThresholds.GetMaxBuildings(city.cityLevel)} max au Nv.{city.cityLevel})", UIFactory.Parchment);
             }
             else
             {
-                AddInfoRow(content, "  No city data available", Color.gray);
+                AddInfoRow(content, "Population régionale", $"{prov.population:N0}", UIFactory.Parchment);
             }
+            
+            UIFactory.CreateSeparator(content);
+            
+            // === REGIONAL ECONOMY ===
+            UIFactory.CreateSectionHeader(content, "SEC_ECON", "💰 Économie Régionale", 13);
+            AddInfoRow(content, "Or (trésorerie)", $"+{prov.goldIncome:F0}/tour", UIFactory.EmpireGold);
+            AddInfoRow(content, "Nourriture", $"+{prov.foodProduction:F0}/tour", new Color(0.5f, 0.8f, 0.3f));
+            AddInfoRow(content, "Fer (extraction)", $"+{prov.ironProduction:F0}/tour", UIFactory.SilverText);
+            
+            if (city != null)
+            {
+                AddSpacer(content, 2);
+                AddInfoRow(content, "  📦 Stock nourriture", $"{city.storedFood:F0} t", UIFactory.Parchment);
+                AddInfoRow(content, "  📦 Stock fer", $"{city.storedIron:F0}", UIFactory.SilverText);
+                AddInfoRow(content, "  📦 Marchandises", $"{city.storedGoods:F0} unités", UIFactory.EmpireGold);
+                
+                if (city.industries.Count > 0)
+                {
+                    AddSpacer(content, 2);
+                    float totalGold = 0, totalFood = 0, totalIron = 0;
+                    foreach (var ind in city.industries)
+                    {
+                        totalGold += ind.GetGoldOutput();
+                        totalFood += ind.GetFoodOutput();
+                        totalIron += ind.GetIronOutput();
+                    }
+                    if (totalGold > 0) AddInfoRow(content, "  Industrie → Or", $"+{totalGold:F0}/tour", UIFactory.EmpireGold);
+                    if (totalFood > 0) AddInfoRow(content, "  Industrie → Nourriture", $"+{totalFood:F0}/tour", new Color(0.5f, 0.8f, 0.3f));
+                    if (totalIron > 0) AddInfoRow(content, "  Industrie → Fer", $"+{totalIron:F0}/tour", UIFactory.SilverText);
+                }
+            }
+
+            UIFactory.CreateSeparator(content);
+
+            // === STRATEGIC DEFENSE ===
+            UIFactory.CreateSectionHeader(content, "SEC_DEF", "🏰 Défense Stratégique", 13);
+            if (city != null)
+            {
+                float order = city.publicOrder;
+                Color orderCol = order > 70 ? Color.green : order > 40 ? UIFactory.EmpireGold : Color.red;
+                AddInfoRow(content, "Ordre public", $"{order:F0}/100", orderCol);
+                var (obg, ofill) = UIFactory.CreateProgressBar(content, "OrderBar", orderCol);
+                UIFactory.AddLayoutElement(obg.gameObject, preferredHeight: 8);
+                ofill.GetComponent<RectTransform>().anchorMax = new Vector2(order / 100f, 1f);
+                
+                AddInfoRow(content, "Fortification", $"Grade {city.GetFortificationLevel()}", UIFactory.Porcelain);
+                AddInfoRow(content, "Garnison", $"{city.garrisonSize}/{city.maxGarrison} soldats", UIFactory.SilverText);
+            }
+            else
+            {
+                AddInfoRow(content, "Terrain défensif", prov.terrainType.ToString().ToUpper(), UIFactory.Parchment);
+                AddInfoRow(content, "Garnison provinciale", $"{prov.garrisonSize}", UIFactory.SilverText);
+            }
+            
+            UIFactory.CreateSeparator(content);
+            
+            // === CULTURE & RELIGION ===
+            UIFactory.CreateSectionHeader(content, "SEC_CUL", "🏛 Culture & Religion", 13);
+            AddInfoRow(content, "Culture", prov.primaryCulture.ToString(), prov.IsCultureAccepted ? Color.green : new Color(1f, 0.5f, 0.2f));
+            AddInfoRow(content, "Religion", prov.primaryReligion.ToString(), prov.IsReligionAccepted ? Color.green : new Color(1f, 0.5f, 0.2f));
+            if (!prov.IsCultureAccepted)
+            {
+                AddInfoRow(content, "  Assimilation", $"{(prov.cultureAssimilation * 100):F0}%", UIFactory.SilverText);
+                var (abg, afill) = UIFactory.CreateProgressBar(content, "AssimBar", UIFactory.EmpireGold);
+                UIFactory.AddLayoutElement(abg.gameObject, preferredHeight: 6);
+                afill.GetComponent<RectTransform>().anchorMax = new Vector2(prov.cultureAssimilation, 1f);
+            }
+            AddInfoRow(content, "Loyauté", $"{prov.loyalty:F0}/100", prov.loyalty > 60 ? Color.green : prov.loyalty > 30 ? UIFactory.EmpireGold : Color.red);
+            
+            UIFactory.CreateSeparator(content);
+            
+            // === PROVINCE STATUS ===
+            UIFactory.CreateSectionHeader(content, "SEC_PROV", "🗺 État de la Province", 13);
+            AddInfoRow(content, "Terrain", prov.terrainType.ToString(), UIFactory.Porcelain);
+            
+            Color devColor = prov.devastation < 10 ? Color.green : prov.devastation < 40 ? UIFactory.EmpireGold : Color.red;
+            AddInfoRow(content, "Dévastation", $"{prov.devastation:F0}%", devColor);
+            
+            Color prosColor = prov.prosperity > 60 ? Color.green : prov.prosperity > 30 ? UIFactory.EmpireGold : Color.red;
+            AddInfoRow(content, "Prospérité", $"{prov.prosperity:F0}%", prosColor);
+            
+            Color revColor = prov.revoltRisk < 20 ? Color.green : prov.revoltRisk < 50 ? UIFactory.EmpireGold : Color.red;
+            AddInfoRow(content, "Risque de révolte", $"{prov.revoltRisk}%", revColor);
+            
+            if (prov.isOccupied) AddInfoRow(content, "⚠ PROVINCE OCCUPÉE", $"Depuis {prov.turnsOccupied} tours", Color.red);
+            if (!prov.isCored) AddInfoRow(content, "⚠ NON ANNEXÉE", "Intégration en cours", new Color(1f, 0.5f, 0.2f));
+            if (prov.hasActiveRevolt) AddInfoRow(content, "🔥 RÉVOLTE ACTIVE", $"{prov.revoltStrength} rebelles", Color.red);
         }
         
         // ─── BUILDINGS TAB ────────────────────────────────────────
@@ -1393,7 +1536,10 @@ namespace NapoleonicWars.UI
             if (content == null) return;
             ClearContent(content);
             
-            AddInfoRow(content, city != null ? city.cityName : prov.provinceName, UIFactory.GoldAccent, 16, true);
+            // Header info
+            if (city != null)
+                AddInfoRow(content, $"🏗 {city.buildings.Count}/{city.maxBuildings} bâtiments — {CityLevelThresholds.GetMaxBuildings(city.cityLevel)} max au Nv.{city.cityLevel}", UIFactory.Parchment);
+            
             AddSpacer(content, 4);
             
             // Use ProvinceData building slots — grouped by category
@@ -1405,7 +1551,7 @@ namespace NapoleonicWars.UI
                     else if (b.isConstructing) building++; 
                     else built++;
                 
-                AddInfoRow(content, $"Slots: {built} built, {building} constructing, {empty} empty ({prov.buildings.Length} total)", UIFactory.ParchmentBeige);
+                AddInfoRow(content, $"Créneaux: {built} construits, {building} en cours, {empty} vides ({prov.buildings.Length} total)", UIFactory.ParchmentBeige);
                 AddSpacer(content, 4);
                 
                 // Group by category
@@ -1434,75 +1580,113 @@ namespace NapoleonicWars.UI
                 {
                     if (!categories.ContainsKey(cat)) continue;
                     
-                    // Category header
+                    string catIcon = cat switch
+                    {
+                        BuildingCategory.Military => "⚔",
+                        BuildingCategory.Economy => "💰",
+                        BuildingCategory.Religion => "⛪",
+                        BuildingCategory.Academic => "🏛",
+                        _ => "🔧"
+                    };
                     string catName = cat switch
                     {
-                        BuildingCategory.Military => "⚔ MILITARY",
-                        BuildingCategory.Economy => "💰 ECONOMY",
-                        BuildingCategory.Religion => "⛪ RELIGION",
-                        BuildingCategory.Academic => "🏛 ACADEMIC",
-                        _ => "🔧 INFRASTRUCTURE"
+                        BuildingCategory.Military => "Édifices Militaires",
+                        BuildingCategory.Economy => "Économie Royale",
+                        BuildingCategory.Religion => "Lieux Sacrés",
+                        BuildingCategory.Academic => "Académie Impériale",
+                        _ => "Infrastructure Civile"
                     };
-                    Color catColor = cat switch
-                    {
-                        BuildingCategory.Military => new Color(0.85f, 0.3f, 0.25f),
-                        BuildingCategory.Economy => new Color(0.85f, 0.75f, 0.3f),
-                        BuildingCategory.Religion => new Color(0.6f, 0.5f, 0.85f),
-                        BuildingCategory.Academic => new Color(0.4f, 0.7f, 0.9f),
-                        _ => new Color(0.6f, 0.6f, 0.55f)
-                    };
-                    AddSectionLabel(content, catName);
+                    UIFactory.CreateSectionHeader(content, "CAT_" + cat, $"{catIcon} {catName}", 13);
                     
                     foreach (var (idx, slot) in categories[cat])
                     {
+                        // Card-style building row
+                        GameObject row = new GameObject("BldRow");
+                        row.transform.SetParent(content, false);
+                        UIFactory.AddHorizontalLayout(row, 8f, new RectOffset(10, 8, 4, 4));
+                        UIFactory.AddLayoutElement(row, preferredHeight: 38);
+                        Image rowBg = row.AddComponent<Image>();
+
+                        string name = BuildingInfo.GetName(slot.type);
+                        string icon = BuildingInfo.GetIcon(slot.type);
+                        
                         if (slot.isConstructing)
                         {
-                            // Building under construction — with progress info
+                            rowBg.color = new Color(0.12f, 0.10f, 0.06f, 1f); // warm construction bg
+                            
+                            GameObject leftC = new GameObject("Left");
+                            leftC.transform.SetParent(row.transform, false);
+                            var lv = leftC.AddComponent<VerticalLayoutGroup>();
+                            lv.spacing = 1f; lv.childForceExpandWidth = true; lv.childForceExpandHeight = false;
+                            UIFactory.AddLayoutElement(leftC, flexibleWidth: 1);
+                            
+                            Text lbl = UIFactory.CreateText(leftC.transform, "Lbl", $"{icon} {name.ToUpper()}", 11, TextAnchor.MiddleLeft, UIFactory.EmpireGold);
+                            lbl.fontStyle = FontStyle.Bold;
+                            UIFactory.CreateText(leftC.transform, "Status", $"  🔨 En construction — {slot.turnsToComplete} tours restants", 9, TextAnchor.MiddleLeft, UIFactory.MutedGold);
+                            
                             int totalTime = BuildingInfo.GetBuildTime(slot.type);
                             int elapsed = Mathf.Max(0, totalTime - slot.turnsToComplete);
                             float progress = totalTime > 0 ? (float)elapsed / totalTime : 0f;
-                            
-                            AddInfoRow(content, $"  {BuildingInfo.GetIcon(slot.type)} {BuildingInfo.GetName(slot.type)} Lv.{slot.level} — Building ({slot.turnsToComplete}t remaining)", UIFactory.GoldAccent);
                             AddBuildingProgressBar(content, progress);
                         }
                         else
                         {
-                            // Constructed building — show effects
-                            AddInfoRow(content, $"  {BuildingInfo.GetIcon(slot.type)} {BuildingInfo.GetName(slot.type)} Lv.{slot.level} — Built", new Color(0.4f, 0.8f, 0.4f));
+                            rowBg.color = new Color(0.09f, 0.09f, 0.10f, 1f);
+                            
+                            // Icon
+                            Text iconTxt = UIFactory.CreateText(row.transform, "Icon", icon, 18, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
+                            UIFactory.AddLayoutElement(iconTxt.gameObject, preferredWidth: 28);
+                            
+                            // Name + effects
+                            GameObject midC = new GameObject("Mid");
+                            midC.transform.SetParent(row.transform, false);
+                            var mv = midC.AddComponent<VerticalLayoutGroup>();
+                            mv.spacing = 1f; mv.childForceExpandWidth = true; mv.childForceExpandHeight = false;
+                            UIFactory.AddLayoutElement(midC, flexibleWidth: 1);
+                            
+                            Text lbl = UIFactory.CreateText(midC.transform, "Lbl", $"{name.ToUpper()} NV.{slot.level}", 11, TextAnchor.MiddleLeft, UIFactory.Porcelain);
+                            lbl.fontStyle = FontStyle.Bold;
+                            
                             string effects = BuildingInfo.GetEffects(slot.type);
                             if (!string.IsNullOrEmpty(effects) && effects != "No effects")
-                                AddInfoRow(content, $"    ↳ {effects}", new Color(0.55f, 0.55f, 0.5f), 10);
+                                UIFactory.CreateText(midC.transform, "Eff", $"  ↳ {effects}", 8, TextAnchor.MiddleLeft, new Color(0.5f, 0.5f, 0.45f));
+                            
+                            // Status badge
+                            Text badge = UIFactory.CreateText(row.transform, "Badge", "✓ ÉTABLI", 9, TextAnchor.MiddleCenter, new Color(0.4f, 0.8f, 0.4f));
+                            UIFactory.AddLayoutElement(badge.gameObject, preferredWidth: 60);
                         }
                     }
                     AddSpacer(content, 4);
                 }
                 
-                // Empty slots at the bottom
+                // Empty slots — premium style
                 if (emptySlots.Count > 0)
                 {
-                    AddSectionLabel(content, "📦 EMPTY SLOTS");
+                    UIFactory.CreateSectionHeader(content, "SEC_EMPTY", "📦 Créneaux Disponibles", 13);
                     foreach (int idx in emptySlots)
                     {
                         GameObject row = new GameObject("EmptySlot");
                         row.transform.SetParent(content, false);
-                        row.AddComponent<RectTransform>();
-                        UIFactory.AddHorizontalLayout(row, 4f);
-                        UIFactory.AddLayoutElement(row, 28);
+                        UIFactory.AddHorizontalLayout(row, 8f, new RectOffset(10, 8, 4, 4));
+                        UIFactory.AddLayoutElement(row, preferredHeight: 34);
+                        Image rowBg = row.AddComponent<Image>();
+                        rowBg.color = new Color(0.07f, 0.07f, 0.08f, 0.8f);
                         
-                        UIFactory.CreateText(row.transform, "Lbl", $"  Slot {idx+1} — Empty", 12, TextAnchor.MiddleLeft, Color.gray);
+                        Text lbl = UIFactory.CreateText(row.transform, "Lbl", $"  ☐ CRÉNEAU {idx+1} — Vide", 11, TextAnchor.MiddleLeft, UIFactory.SilverText);
+                        UIFactory.AddLayoutElement(lbl.gameObject, flexibleWidth: 1);
                         
-                        int slotIdx = idx;
-                        Button btn = UIFactory.CreateGoldButton(row.transform, "Build", "+ Build", 11, () =>
+                        Button btn = UIFactory.CreateButton(row.transform, "Build", "CONSTRUIRE", 9, () =>
                         {
                             if (city != null) ShowCityBuildPicker(city);
                         });
-                        UIFactory.AddLayoutElement(btn.gameObject, 70, 24);
+                        UIFactory.AddLayoutElement(btn.gameObject, preferredWidth: 90, preferredHeight: 24);
+                        btn.GetComponent<Image>().color = new Color(0.15f, 0.12f, 0.06f);
                     }
                 }
             }
             else if (city != null)
             {
-                AddInfoRow(content, $"Buildings: {city.buildings.Count}/{city.maxBuildings}", UIFactory.ParchmentBeige);
+                AddInfoRow(content, $"Bâtiments: {city.buildings.Count}/{city.maxBuildings}", UIFactory.ParchmentBeige);
                 AddSpacer(content, 4);
                 
                 // Group CityData buildings by category
@@ -1524,26 +1708,29 @@ namespace NapoleonicWars.UI
                     
                     string catName = cat switch
                     {
-                        BuildingCategory.Military => "⚔ MILITARY",
-                        BuildingCategory.Economy => "💰 ECONOMY",
+                        BuildingCategory.Military => "⚔ MILITAIRE",
+                        BuildingCategory.Economy => "💰 ÉCONOMIE",
                         BuildingCategory.Religion => "⛪ RELIGION",
-                        BuildingCategory.Academic => "🏛 ACADEMIC",
+                        BuildingCategory.Academic => "🏛 ACADÉMIE",
                         _ => "🔧 INFRASTRUCTURE"
                     };
                     AddSectionLabel(content, catName);
                     
                     foreach (var bld in categories[cat])
                     {
+                        string bIcon = BuildingInfo.GetIcon(bld.buildingType);
+                        string bName = BuildingInfo.GetName(bld.buildingType);
+                        
                         if (bld.isConstructed)
                         {
-                            AddInfoRow(content, $"  {BuildingInfo.GetName(bld.buildingType)} Lv.{bld.level} — Built", new Color(0.4f, 0.8f, 0.4f));
+                            AddInfoRow(content, $"  {bIcon} {bName} Nv.{bld.level} — Établi", new Color(0.4f, 0.8f, 0.4f));
                             string effects = BuildingInfo.GetEffects(bld.buildingType);
                             if (!string.IsNullOrEmpty(effects) && effects != "No effects")
                                 AddInfoRow(content, $"    ↳ {effects}", new Color(0.55f, 0.55f, 0.5f), 10);
                         }
                         else if (bld.isConstructing)
                         {
-                            AddInfoRow(content, $"  {BuildingInfo.GetName(bld.buildingType)} Lv.{bld.level} — Building ({bld.constructionTurnsRemaining}t)", UIFactory.GoldAccent);
+                            AddInfoRow(content, $"  {bIcon} {bName} Nv.{bld.level} — 🔨 Construction ({bld.constructionTurnsRemaining}t)", UIFactory.EmpireGold);
                             int totalTime = BuildingInfo.GetBuildTime(bld.buildingType);
                             int elapsed = Mathf.Max(0, totalTime - bld.constructionTurnsRemaining);
                             float progress = totalTime > 0 ? (float)elapsed / totalTime : 0f;
@@ -1551,7 +1738,7 @@ namespace NapoleonicWars.UI
                         }
                         else
                         {
-                            AddInfoRow(content, $"  {BuildingInfo.GetName(bld.buildingType)} Lv.{bld.level} — Planned", new Color(0.5f, 0.5f, 0.45f));
+                            AddInfoRow(content, $"  {bIcon} {bName} Nv.{bld.level} — Planifié", new Color(0.5f, 0.5f, 0.45f));
                         }
                     }
                     AddSpacer(content, 4);
@@ -1560,40 +1747,43 @@ namespace NapoleonicWars.UI
                 int emptyCount = city.maxBuildings - city.buildings.Count;
                 if (emptyCount > 0)
                 {
-                    AddSectionLabel(content, "📦 EMPTY SLOTS");
+                    AddSectionLabel(content, "📦 CRÉNEAUX VIDES");
                     for (int s = 0; s < emptyCount; s++)
                     {
                         GameObject row = new GameObject("EmptySlot");
                         row.transform.SetParent(content, false);
                         row.AddComponent<RectTransform>();
-                        UIFactory.AddHorizontalLayout(row, 4f);
-                        UIFactory.AddLayoutElement(row, 28);
+                        UIFactory.AddHorizontalLayout(row, 4f, new RectOffset(10, 8, 2, 2));
+                        UIFactory.AddLayoutElement(row, 30);
+                        Image rowBg = row.AddComponent<Image>();
+                        rowBg.color = new Color(0.07f, 0.07f, 0.08f, 0.8f);
                         
-                        UIFactory.CreateText(row.transform, "Lbl", "  Empty slot", 12, TextAnchor.MiddleLeft, Color.gray);
+                        UIFactory.CreateText(row.transform, "Lbl", $"  ☐ Créneau vide", 11, TextAnchor.MiddleLeft, UIFactory.SilverText);
                         
-                        Button btn = UIFactory.CreateGoldButton(row.transform, "Build", "+ Build", 11, () =>
+                        Button btn = UIFactory.CreateButton(row.transform, "Build", "CONSTRUIRE", 9, () =>
                         {
                             ShowCityBuildPicker(city);
                         });
-                        UIFactory.AddLayoutElement(btn.gameObject, 70, 24);
+                        UIFactory.AddLayoutElement(btn.gameObject, preferredWidth: 90, preferredHeight: 24);
+                        btn.GetComponent<Image>().color = new Color(0.15f, 0.12f, 0.06f);
                     }
                 }
             }
             else
             {
-                AddInfoRow(content, "No building data available", Color.gray);
+                AddInfoRow(content, "Aucune donnée de bâtiment disponible", Color.gray);
             }
             
             // Production queue
             if (city != null && city.productionQueue.Count > 0)
             {
                 AddSpacer(content, 6);
-                AddSectionLabel(content, "PRODUCTION QUEUE");
+                UIFactory.CreateSectionHeader(content, "SEC_QUEUE", "📋 File de Production", 13);
                 foreach (var item in city.productionQueue)
                 {
-                    string n = item.itemType == ProductionItemType.Building ? "Building" :
-                              item.itemType == ProductionItemType.Unit ? item.unitType.ToString() : "Goods";
-                    AddInfoRow(content, $"  {n} — {item.turnsRemaining} turns", UIFactory.GoldAccent);
+                    string n = item.itemType == ProductionItemType.Building ? "Bâtiment" :
+                              item.itemType == ProductionItemType.Unit ? item.unitType.ToString() : "Marchandises";
+                    AddInfoRow(content, $"  {n} — {item.turnsRemaining} tours", UIFactory.EmpireGold);
                 }
             }
         }
@@ -1603,37 +1793,19 @@ namespace NapoleonicWars.UI
         /// </summary>
         private void AddBuildingProgressBar(Transform parent, float progress)
         {
-            GameObject barContainer = new GameObject("ProgressBar");
-            barContainer.transform.SetParent(parent, false);
-            RectTransform barRect = barContainer.AddComponent<RectTransform>();
-            UIFactory.AddLayoutElement(barContainer, 8);
+            var (bg, fill) = UIFactory.CreateProgressBar(parent, "ConstProgress", UIFactory.EmpireGold);
+            UIFactory.AddLayoutElement(bg.gameObject, preferredHeight: 12);
+            RectTransform bgRT = bg.GetComponent<RectTransform>();
+            bgRT.sizeDelta = new Vector2(0, 8); 
             
-            // Background bar (dark)
-            GameObject bgBar = new GameObject("BG");
-            bgBar.transform.SetParent(barContainer.transform, false);
-            RectTransform bgRect = bgBar.AddComponent<RectTransform>();
-            bgRect.anchorMin = new Vector2(0.05f, 0.2f);
-            bgRect.anchorMax = new Vector2(0.95f, 0.8f);
-            bgRect.offsetMin = Vector2.zero;
-            bgRect.offsetMax = Vector2.zero;
-            Image bgImg = bgBar.AddComponent<Image>();
-            bgImg.color = new Color(0.15f, 0.15f, 0.15f, 0.8f);
-            
-            // Fill bar (gold/green)
-            GameObject fillBar = new GameObject("Fill");
-            fillBar.transform.SetParent(barContainer.transform, false);
-            RectTransform fillRect = fillBar.AddComponent<RectTransform>();
-            fillRect.anchorMin = new Vector2(0.05f, 0.2f);
-            fillRect.anchorMax = new Vector2(0.05f + 0.9f * Mathf.Clamp01(progress), 0.8f);
-            fillRect.offsetMin = Vector2.zero;
-            fillRect.offsetMax = Vector2.zero;
-            Image fillImg = fillBar.AddComponent<Image>();
-            fillImg.color = progress >= 0.75f ? new Color(0.4f, 0.8f, 0.3f, 0.9f) : new Color(0.85f, 0.7f, 0.2f, 0.9f);
+            fill.GetComponent<RectTransform>().anchorMax = new Vector2(progress, 1f);
         }
         
         private void ShowCityBuildPicker(CityData city)
         {
             foreach (Transform child in buildMenuContainer) Destroy(child.gameObject);
+            
+            FactionData playerFac = CampaignManager.Instance?.GetPlayerFaction();
             
             // Gather ALL building types except Empty
             var allTypes = new List<BuildingType>();
@@ -1665,15 +1837,52 @@ namespace NapoleonicWars.UI
                 int time = BuildingInfo.GetBuildTime(type);
                 string icon = BuildingInfo.GetIcon(type);
                 string desc = BuildingInfo.GetEffects(type);
+                string bName = BuildingInfo.GetName(type);
                 
-                BuildingType ct = type;
-                string label = $"{icon} {BuildingInfo.GetName(type)} — {cost}g, {time}t";
+                bool canAfford = playerFac != null && playerFac.gold >= cost;
+                
+                // === Card-style building entry ===
+                GameObject card = new GameObject($"B_{type}");
+                card.transform.SetParent(buildMenuContainer, false);
+                Image cardBg = card.AddComponent<Image>();
+                cardBg.color = canAfford ? new Color(0.09f, 0.09f, 0.10f, 1f) : new Color(0.06f, 0.06f, 0.07f, 0.7f);
+                UIFactory.AddHorizontalLayout(card, 8f, new RectOffset(10, 8, 6, 6));
+                UIFactory.AddLayoutElement(card, preferredHeight: 52);
+                
+                // Left: Icon
+                Text iconTxt = UIFactory.CreateText(card.transform, "Icon", icon, 22, TextAnchor.MiddleCenter, 
+                    canAfford ? UIFactory.EmpireGold : UIFactory.SilverText);
+                UIFactory.AddLayoutElement(iconTxt.gameObject, preferredWidth: 32);
+                
+                // Middle: Name + desc + costs
+                GameObject midCol = new GameObject("Mid");
+                midCol.transform.SetParent(card.transform, false);
+                var mcvlg = midCol.AddComponent<VerticalLayoutGroup>();
+                mcvlg.spacing = 1f; mcvlg.childForceExpandWidth = true; mcvlg.childForceExpandHeight = false;
+                UIFactory.AddLayoutElement(midCol, flexibleWidth: 1);
+                
+                Text nameLbl = UIFactory.CreateText(midCol.transform, "Name", bName.ToUpper(), 12, TextAnchor.MiddleLeft, 
+                    canAfford ? UIFactory.Porcelain : UIFactory.SilverText);
+                nameLbl.fontStyle = FontStyle.Bold;
+                
+                UIFactory.CreateText(midCol.transform, "Cost", $"💰 {cost}g  ⏱ {time} tours", 9, TextAnchor.MiddleLeft, UIFactory.MutedGold);
+                
                 if (!string.IsNullOrEmpty(desc))
-                    label += $"\n  <size=10><color=#999>{desc}</color></size>";
+                    UIFactory.CreateText(midCol.transform, "Desc", desc, 8, TextAnchor.MiddleLeft, new Color(0.5f, 0.5f, 0.45f));
                 
-                Button btn = UIFactory.CreateGoldButton(buildMenuContainer, $"B_{type}", label, 12, () =>
-                { city.StartBuildingConstruction(ct, cost); buildMenuPanel.SetActive(false); cityPanelDirty = true; });
-                UIFactory.AddLayoutElement(btn.gameObject, 38);
+                // Right: Build button
+                BuildingType ct = type; int cc = cost;
+                Button btn = UIFactory.CreateButton(card.transform, "Build", canAfford ? "CONSTRUIRE" : "FONDS ✗", 9, () =>
+                { 
+                    if (canAfford) 
+                    { city.StartBuildingConstruction(ct, cc); buildMenuPanel.SetActive(false); cityPanelDirty = true; RefreshCityPanel(); }
+                });
+                UIFactory.AddLayoutElement(btn.gameObject, preferredWidth: 80, preferredHeight: 28);
+                btn.interactable = canAfford;
+                btn.GetComponent<Image>().color = canAfford 
+                    ? new Color(0.15f, 0.12f, 0.06f)  // warm dark gold
+                    : new Color(0.1f, 0.08f, 0.08f);
+                
                 count++;
             }
             
@@ -1681,11 +1890,6 @@ namespace NapoleonicWars.UI
             {
                 AddInfoRow(buildMenuContainer, "Tous les bâtiments sont déjà construits", Color.gray);
             }
-            
-            // Cancel button
-            Button cancelBtn = UIFactory.CreateGoldButton(buildMenuContainer, "CancelBuild", "Annuler", 13,
-                () => buildMenuPanel.SetActive(false));
-            UIFactory.AddLayoutElement(cancelBtn.gameObject, 32);
             
             buildMenuPanel.SetActive(true);
         }
@@ -1697,70 +1901,141 @@ namespace NapoleonicWars.UI
             if (content == null) return;
             ClearContent(content);
             
-            AddInfoRow(content, city != null ? city.cityName : prov.provinceName, UIFactory.GoldAccent, 16, true);
-            AddSpacer(content, 4);
-            AddSectionLabel(content, "RECRUIT UNITS");
+            bool hasBarracks = city != null && city.HasBuilding(BuildingType.Barracks);
+            bool hasStables = city != null && city.HasBuilding(BuildingType.Stables);
+            bool hasArmory = city != null && city.HasBuilding(BuildingType.Armory);
             
-            var units = new (UnitType type, string name, string req, int cost, int turns)[]
-            {
-                (UnitType.LineInfantry, "Line Infantry", "Barracks", 100, 2),
-                (UnitType.LightInfantry, "Light Infantry", "Barracks", 80, 2),
-                (UnitType.Grenadier, "Grenadier", "Barracks", 150, 3),
-                (UnitType.Cavalry, "Cavalry", "Stables", 200, 3),
-                (UnitType.Hussar, "Hussar", "Stables", 180, 3),
-                (UnitType.Lancer, "Lancer", "Stables", 190, 3),
-                (UnitType.Artillery, "Artillery", "Armory", 300, 4),
-            };
+            FactionData playerFac = CampaignManager.Instance?.GetPlayerFaction();
             
-            foreach (var (type, name, req, cost, turns) in units)
+            // === MILITIA — Toujours disponible ===
+            UIFactory.CreateSectionHeader(content, "SEC_MIL_MIL", "⚔ Milice Locale", 13);
+            AddInfoRow(content, "Recrutement basique — pas besoin de caserne", UIFactory.SilverText, 10);
+            AddSpacer(content, 2);
+            CreateMilitaryUnitRow(content, city, playerFac, "Milice", "🗡", UnitType.LineInfantry, 30, 5, 1, true, "Milice de base — peu efficace mais toujours disponible");
+            
+            UIFactory.CreateSeparator(content);
+            
+            // === INFANTRY — Requires Barracks ===
+            UIFactory.CreateSectionHeader(content, "SEC_MIL_INF", "🎖 Infanterie Régulière", 13);
+            if (!hasBarracks)
             {
-                bool canProduce = city != null && city.CanProduceUnit(type);
-                
-                GameObject row = new GameObject($"U_{name}");
-                row.transform.SetParent(content, false);
-                row.AddComponent<RectTransform>();
-                UIFactory.AddHorizontalLayout(row, 4f);
-                UIFactory.AddLayoutElement(row, 28);
-                
-                Color col = canProduce ? UIFactory.ParchmentBeige : new Color(0.4f, 0.4f, 0.4f);
-                Text lbl = UIFactory.CreateText(row.transform, "Lbl", $"  {name} ({cost}g, {turns}t)", 12, TextAnchor.MiddleLeft, col);
-                UIFactory.AddLayoutElement(lbl.gameObject, flexibleWidth: 1);
-                
-                if (canProduce)
-                {
-                    UnitType ct = type; int cc = cost;
-                    Button btn = UIFactory.CreateGoldButton(row.transform, "Rec", "Recruit", 11, () =>
-                    { city.StartUnitProduction(ct, cc); cityPanelDirty = true; });
-                    UIFactory.AddLayoutElement(btn.gameObject, 70, 24);
-                }
-                else
-                {
-                    Text r = UIFactory.CreateText(row.transform, "Req", $"Need {req}", 10, TextAnchor.MiddleRight, new Color(0.7f, 0.3f, 0.2f));
-                    UIFactory.AddLayoutElement(r.gameObject, 80);
-                }
+                AddInfoRow(content, "⚠ CASERNE REQUISE pour recruter l'infanterie régulière", Color.red, 10);
+                AddSpacer(content, 2);
             }
+            CreateMilitaryUnitRow(content, city, playerFac, "Infanterie de ligne", "🔫", UnitType.LineInfantry, 100, 15, 2, hasBarracks, "Mousquets: 80, Uniformes: 60");
+            CreateMilitaryUnitRow(content, city, playerFac, "Infanterie légère", "🏹", UnitType.LightInfantry, 80, 10, 2, hasBarracks, "Mousquets: 60, Uniformes: 40");
+            CreateMilitaryUnitRow(content, city, playerFac, "Grenadier", "💣", UnitType.Grenadier, 150, 25, 3, hasBarracks, "Mousquets: 100, Bayonnettes: 80, Uniformes: 60");
             
-            AddSpacer(content, 6);
-            AddSectionLabel(content, "GARRISON");
+            UIFactory.CreateSeparator(content);
+            
+            // === CAVALRY — Requires Stables ===
+            UIFactory.CreateSectionHeader(content, "SEC_MIL_CAV", "🏇 Cavalerie", 13);
+            if (!hasStables)
+            {
+                AddInfoRow(content, "⚠ ÉCURIES REQUISES pour recruter la cavalerie", Color.red, 10);
+                AddSpacer(content, 2);
+            }
+            CreateMilitaryUnitRow(content, city, playerFac, "Cavalerie", "🐴", UnitType.Cavalry, 200, 20, 3, hasStables, "Sabres: 60, Chevaux: 80, Uniformes: 60");
+            CreateMilitaryUnitRow(content, city, playerFac, "Hussard", "⚡", UnitType.Hussar, 180, 15, 3, hasStables, "Sabres: 40, Chevaux: 60, Uniformes: 50");
+            CreateMilitaryUnitRow(content, city, playerFac, "Lancier", "🔱", UnitType.Lancer, 190, 18, 3, hasStables, "Sabres: 50, Chevaux: 70, Uniformes: 50");
+            
+            UIFactory.CreateSeparator(content);
+            
+            // === ARTILLERY — Requires Armory ===
+            UIFactory.CreateSectionHeader(content, "SEC_MIL_ART", "💥 Artillerie", 13);
+            if (!hasArmory)
+            {
+                AddInfoRow(content, "⚠ ARMURERIE REQUISE pour recruter l'artillerie", Color.red, 10);
+                AddSpacer(content, 2);
+            }
+            CreateMilitaryUnitRow(content, city, playerFac, "Artillerie", "🎯", UnitType.Artillery, 300, 40, 4, hasArmory, "Canons: 6, Poudre: 100, Chevaux: 20");
+            
+            UIFactory.CreateSeparator(content);
+            
+            // === GARRISON & DEFENSE ===
+            UIFactory.CreateSectionHeader(content, "SEC_MIL_DEF", "🏰 Garnison & Défense", 13);
             if (city != null)
             {
-                AddInfoRow(content, $"  Garrison: {city.garrisonSize}/{city.maxGarrison}", UIFactory.ParchmentBeige);
-                AddInfoRow(content, $"  Fortification: Lv.{city.GetFortificationLevel()}", UIFactory.ParchmentBeige);
+                AddInfoRow(content, "Force active", $"{city.garrisonSize}/{city.maxGarrison}", UIFactory.SilverText);
+                float garRatio = (float)city.garrisonSize / Mathf.Max(1, city.maxGarrison);
+                var (gbg, gfill) = UIFactory.CreateProgressBar(content, "GarBar", garRatio > 0.7f ? Color.green : UIFactory.EmpireGold);
+                UIFactory.AddLayoutElement(gbg.gameObject, preferredHeight: 8);
+                gfill.GetComponent<RectTransform>().anchorMax = new Vector2(garRatio, 1f);
+                
+                AddInfoRow(content, "Fortification", $"Grade {city.GetFortificationLevel()}", UIFactory.Porcelain);
             }
             
-            AddSpacer(content, 6);
-            AddSectionLabel(content, "PRODUCTION QUEUE");
+            UIFactory.CreateSeparator(content);
+            
+            // === PRODUCTION QUEUE ===
+            UIFactory.CreateSectionHeader(content, "SEC_MIL_Q", "📋 File de Recrutement", 13);
             if (city != null && city.productionQueue.Count > 0)
             {
                 foreach (var item in city.productionQueue)
                 {
-                    string n = item.itemType == ProductionItemType.Unit ? item.unitType.ToString() : "Building";
-                    AddInfoRow(content, $"  {n} — {item.turnsRemaining} turns", UIFactory.GoldAccent);
+                    if (item.itemType == ProductionItemType.Unit)
+                    {
+                        string unitIcon = GetUnitTypeIcon(item.unitType);
+                        AddInfoRow(content, $"  {unitIcon} {item.unitType.ToString().ToUpper()}", $"{item.turnsRemaining} tours", UIFactory.EmpireGold);
+                    }
                 }
             }
             else
             {
-                AddInfoRow(content, "  No production queued", Color.gray);
+                AddInfoRow(content, "Aucun recrutement en cours", UIFactory.SilverText);
+            }
+        }
+        
+        /// <summary>
+        /// Create a military unit recruitment row with cost breakdown and recruit button
+        /// </summary>
+        private void CreateMilitaryUnitRow(Transform parent, CityData city, FactionData faction,
+            string unitName, string icon, UnitType unitType, int goldCost, int ironCost, int turns, 
+            bool meetsRequirements, string equipmentInfo)
+        {
+            GameObject row = new GameObject($"U_{unitName}");
+            row.transform.SetParent(parent, false);
+            UIFactory.AddHorizontalLayout(row, 6f, new RectOffset(8, 8, 3, 3));
+            UIFactory.AddLayoutElement(row, preferredHeight: 44);
+            Image bg = row.AddComponent<Image>();
+            bg.color = meetsRequirements ? new Color(1, 1, 1, 0.04f) : new Color(0.3f, 0.1f, 0.1f, 0.15f);
+            
+            // Left: unit name and costs
+            GameObject leftCol = new GameObject("Left");
+            leftCol.transform.SetParent(row.transform, false);
+            var vlg = leftCol.AddComponent<VerticalLayoutGroup>();
+            vlg.spacing = 1f;
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+            UIFactory.AddLayoutElement(leftCol, flexibleWidth: 1);
+            
+            Text nameLabel = UIFactory.CreateText(leftCol.transform, "Name", $"{icon} {unitName.ToUpper()}", 11, 
+                TextAnchor.MiddleLeft, meetsRequirements ? UIFactory.Porcelain : UIFactory.SilverText);
+            nameLabel.fontStyle = FontStyle.Bold;
+            
+            string costStr = $"  💰{goldCost}g  ⛏{ironCost} fer  ⏱{turns}t";
+            UIFactory.CreateText(leftCol.transform, "Cost", costStr, 9, TextAnchor.MiddleLeft, UIFactory.MutedGold);
+            
+            // Equipment tooltip
+            UIFactory.CreateText(leftCol.transform, "Equip", $"  {equipmentInfo}", 8, TextAnchor.MiddleLeft, 
+                new Color(0.5f, 0.5f, 0.45f));
+            
+            // Right: button
+            if (meetsRequirements && city != null)
+            {
+                bool canAfford = faction != null && faction.gold >= goldCost && faction.iron >= ironCost;
+                UnitType ct = unitType; int cc = goldCost;
+                Button btn = UIFactory.CreateButton(row.transform, "Draft", canAfford ? "RECRUTER" : "FONDS ✗", 9, () =>
+                { 
+                    if (canAfford) { city.StartUnitProduction(ct, cc); cityPanelDirty = true; RefreshCityPanel(); }
+                });
+                UIFactory.AddLayoutElement(btn.gameObject, preferredWidth: 75, preferredHeight: 26);
+                btn.interactable = canAfford;
+            }
+            else
+            {
+                Text locked = UIFactory.CreateText(row.transform, "Lock", "🔒", 12, TextAnchor.MiddleCenter, new Color(0.5f, 0.3f, 0.3f));
+                UIFactory.AddLayoutElement(locked.gameObject, preferredWidth: 30);
             }
         }
         
@@ -1771,62 +2046,211 @@ namespace NapoleonicWars.UI
             if (content == null) return;
             ClearContent(content);
             
-            AddInfoRow(content, city != null ? city.cityName : prov.provinceName, UIFactory.GoldAccent, 16, true);
-            AddSpacer(content, 4);
-            AddSectionLabel(content, "ACTIVE INDUSTRIES");
+            FactionData playerFac = CampaignManager.Instance?.GetPlayerFaction();
             
+            // === PRODUCTION SUMMARY ===
+            UIFactory.CreateSectionHeader(content, "SEC_IND_SUM", "📊 Résumé de Production", 13);
+            float totalGold = prov.goldIncome, totalFood = prov.foodProduction, totalIron = prov.ironProduction;
+            float indGold = 0, indFood = 0, indIron = 0, indWood = 0;
+            
+            if (city != null)
+            {
+                foreach (var ind in city.industries)
+                {
+                    indGold += ind.GetGoldOutput();
+                    indFood += ind.GetFoodOutput();
+                    indIron += ind.GetIronOutput();
+                    indWood += 0; // Wood output not yet implemented
+                }
+            }
+            totalGold += indGold; totalFood += indFood; totalIron += indIron;
+            
+            AddInfoRow(content, "💰 Or total", $"+{totalGold:F0}/tour (province: {prov.goldIncome:F0}, industrie: {indGold:F0})", UIFactory.EmpireGold);
+            AddInfoRow(content, "🌾 Nourriture", $"+{totalFood:F0}/tour (province: {prov.foodProduction:F0}, industrie: {indFood:F0})", new Color(0.5f, 0.8f, 0.3f));
+            AddInfoRow(content, "⛏ Fer", $"+{totalIron:F0}/tour (province: {prov.ironProduction:F0}, industrie: {indIron:F0})", UIFactory.SilverText);
+            if (indWood > 0) AddInfoRow(content, "🪵 Bois", $"+{indWood:F0}/tour", new Color(0.6f, 0.45f, 0.25f));
+            
+            UIFactory.CreateSeparator(content);
+            
+            // === EXISTING INDUSTRIES ===
+            UIFactory.CreateSectionHeader(content, "SEC_IND_ACT", "🏭 Industries Actives", 13);
             if (city != null && city.industries.Count > 0)
             {
                 foreach (var ind in city.industries)
                 {
                     string output = "";
                     if (ind.GetGoldOutput() > 0) output += $"+{ind.GetGoldOutput():F0}g ";
-                    if (ind.GetFoodOutput() > 0) output += $"+{ind.GetFoodOutput():F0} food ";
-                    if (ind.GetIronOutput() > 0) output += $"+{ind.GetIronOutput():F0} iron ";
-                    if (ind.GetWoodOutput() > 0) output += $"+{ind.GetWoodOutput():F0} wood ";
-                    if (ind.GetProductionOutput() > 0) output += $"+{ind.GetProductionOutput():F0} prod ";
-                    if (string.IsNullOrEmpty(output)) output = "(base)";
+                    if (ind.GetFoodOutput() > 0) output += $"+{ind.GetFoodOutput():F0}🌾 ";
+                    if (ind.GetIronOutput() > 0) output += $"+{ind.GetIronOutput():F0}⛏ ";
+                    // Wood output not yet implemented
+                    
+                    string indName = GetIndustryName(ind.industryType);
                     
                     GameObject row = new GameObject($"I_{ind.industryType}");
                     row.transform.SetParent(content, false);
-                    row.AddComponent<RectTransform>();
-                    UIFactory.AddHorizontalLayout(row, 4f);
-                    UIFactory.AddLayoutElement(row, 28);
+                    UIFactory.AddHorizontalLayout(row, 6f, new RectOffset(8, 8, 3, 3));
+                    UIFactory.AddLayoutElement(row, preferredHeight: 40);
+                    Image bg = row.AddComponent<Image>();
+                    bg.color = new Color(1, 1, 1, 0.04f);
                     
-                    UIFactory.CreateText(row.transform, "Lbl", $"  {ind.industryType} Lv.{ind.level} — {output}", 12, TextAnchor.MiddleLeft, UIFactory.ParchmentBeige);
+                    // Left info
+                    GameObject leftCol = new GameObject("Left");
+                    leftCol.transform.SetParent(row.transform, false);
+                    var vlg = leftCol.AddComponent<VerticalLayoutGroup>();
+                    vlg.spacing = 1f; vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false;
+                    UIFactory.AddLayoutElement(leftCol, flexibleWidth: 1);
                     
+                    var lbl = UIFactory.CreateText(leftCol.transform, "Lbl", $"{GetIndustryIcon(ind.industryType)} {indName.ToUpper()} NV.{ind.level}", 11, TextAnchor.MiddleLeft, UIFactory.Porcelain);
+                    lbl.fontStyle = FontStyle.Bold;
+                    UIFactory.CreateText(leftCol.transform, "Out", $"  Production: {output}", 9, TextAnchor.MiddleLeft, UIFactory.MutedGold);
+                    
+                    // Upgrade button
+                    int upgCost = 150 * ind.level;
+                    int upgIron = 50 * ind.level;
+                    bool canUpgrade = playerFac != null && playerFac.gold >= upgCost && playerFac.iron >= upgIron;
                     IndustrySlot ci = ind;
-                    Button btn = UIFactory.CreateGoldButton(row.transform, "Up", "Upgrade", 10, () =>
-                    { ci.level++; cityPanelDirty = true; });
-                    UIFactory.AddLayoutElement(btn.gameObject, 65, 24);
+                    Button btn = UIFactory.CreateButton(row.transform, "Up", canUpgrade ? $"↑ NV.{ind.level + 1}" : "FONDS ✗", 9, () =>
+                    { 
+                        if (canUpgrade && playerFac != null) 
+                        { 
+                            playerFac.gold -= upgCost; playerFac.iron -= upgIron;
+                            ci.level++; cityPanelDirty = true; RefreshCityPanel(); 
+                        }
+                    });
+                    UIFactory.AddLayoutElement(btn.gameObject, preferredWidth: 70, preferredHeight: 24);
+                    btn.interactable = canUpgrade;
+                    
+                    // Cost label
+                    UIFactory.CreateText(row.transform, "UpCost", $"{upgCost}g\n{upgIron}⛏", 8, TextAnchor.MiddleCenter, UIFactory.SilverText);
                 }
             }
             else
             {
-                AddInfoRow(content, "  Agriculture Lv.1 — +25 food", UIFactory.ParchmentBeige);
-                AddInfoRow(content, "  Logging Lv.1 — +20 wood", UIFactory.ParchmentBeige);
+                AddInfoRow(content, "Aucune industrie — agriculture de subsistance uniquement", UIFactory.SilverText);
             }
             
-            AddSpacer(content, 6);
-            AddSectionLabel(content, "ADD INDUSTRY");
+            UIFactory.CreateSeparator(content);
             
-            IndustryType[] avail = { IndustryType.Commerce, IndustryType.Manufacturing, IndustryType.Mining,
-                IndustryType.Fishing, IndustryType.Shipbuilding, IndustryType.Textile };
-            
-            foreach (var it in avail)
+            // === MILITARY EQUIPMENT DEMAND ===
+            UIFactory.CreateSectionHeader(content, "SEC_IND_MIL", "⚔ Besoins Militaires", 13);
+            if (playerFac != null)
             {
-                if (city != null && city.industries.Exists(i => i.industryType == it)) continue;
-                IndustryType ct = it;
-                Button ab = UIFactory.CreateGoldButton(content, $"Add_{it}", $"+ {it}", 11, () =>
-                { if (city != null) { city.AddIndustry(ct); cityPanelDirty = true; } });
-                UIFactory.AddLayoutElement(ab.gameObject, 26);
+                var stockpile = playerFac.equipment;
+                if (stockpile != null)
+                {
+                    AddEquipmentRow(content, "Mousquets", EquipmentType.Muskets, stockpile);
+                    AddEquipmentRow(content, "Baïonnettes", EquipmentType.Bayonets, stockpile);
+                    AddEquipmentRow(content, "Sabres", EquipmentType.Sabres, stockpile);
+                    AddEquipmentRow(content, "Canons légers", EquipmentType.CannonsLight, stockpile);
+                    AddEquipmentRow(content, "Canons lourds", EquipmentType.CannonsHeavy, stockpile);
+                    AddEquipmentRow(content, "Chevaux", EquipmentType.Horses, stockpile);
+                    AddEquipmentRow(content, "Uniformes", EquipmentType.Uniforms, stockpile);
+                }
+                else
+                {
+                    AddInfoRow(content, "Aucun équipement produit", UIFactory.SilverText);
+                }
             }
+
+            UIFactory.CreateSeparator(content);
             
-            AddSpacer(content, 6);
-            AddSectionLabel(content, "ECONOMY SUMMARY");
-            AddInfoRow(content, $"  Gold: +{prov.goldIncome:F0}/turn", UIFactory.GoldAccent);
-            AddInfoRow(content, $"  Food: +{prov.foodProduction:F0}/turn", new Color(0.5f, 0.8f, 0.3f));
-            AddInfoRow(content, $"  Iron: +{prov.ironProduction:F0}/turn", new Color(0.6f, 0.6f, 0.65f));
+            // === ADD NEW INDUSTRY ===
+            UIFactory.CreateSectionHeader(content, "SEC_IND_ADD", "➕ Développer l'Industrie", 13);
+            
+            var allIndustries = new (IndustryType type, string name, string icon, string terrain, int goldCost, int ironCost)[]
+            {
+                (IndustryType.Agriculture, "Agriculture", "🌾", "Tous", 100, 20),
+                (IndustryType.Mining, "Extraction minière", "⛏", "Collines/Montagnes", 200, 30),
+                (IndustryType.Logging, "Exploitation forestière", "🪵", "Forêts/Plaines", 120, 15),
+                (IndustryType.Commerce, "Commerce", "💰", "Tous", 180, 25),
+                (IndustryType.Manufacturing, "Manufacture", "🔧", "Tous", 250, 40),
+                (IndustryType.Fishing, "Pêcherie", "🐟", "Côtier", 150, 20),
+                (IndustryType.Shipbuilding, "Chantier naval", "⛵", "Côtier", 400, 60),
+                (IndustryType.Textile, "Textile", "🧵", "Tous", 200, 30),
+            };
+            
+            foreach (var (type, name, icon, terrain, goldCost, ironCost) in allIndustries)
+            {
+                if (city != null && city.industries.Exists(i => i.industryType == type)) continue;
+                
+                // Terrain check
+                bool terrainOk = true;
+                if (terrain == "Côtier" && prov.terrainType != ProvinceTerrainType.Coastal) terrainOk = false;
+                if (terrain == "Collines/Montagnes" && prov.terrainType != ProvinceTerrainType.Hills && prov.terrainType != ProvinceTerrainType.Mountains) terrainOk = false;
+                if (terrain == "Forêts/Plaines" && prov.terrainType != ProvinceTerrainType.Forest && prov.terrainType != ProvinceTerrainType.Plains) terrainOk = false;
+                
+                bool canAfford = playerFac != null && playerFac.gold >= goldCost && playerFac.iron >= ironCost;
+                
+                GameObject row = new GameObject($"Add_{type}");
+                row.transform.SetParent(content, false);
+                UIFactory.AddHorizontalLayout(row, 6f, new RectOffset(8, 8, 2, 2));
+                UIFactory.AddLayoutElement(row, preferredHeight: 30);
+                Image rbg = row.AddComponent<Image>();
+                rbg.color = terrainOk ? new Color(1, 1, 1, 0.03f) : new Color(0.3f, 0.1f, 0.1f, 0.1f);
+                
+                Text lbl = UIFactory.CreateText(row.transform, "Lbl", $"{icon} {name} ({goldCost}g, {ironCost}⛏)", 10, TextAnchor.MiddleLeft, terrainOk ? UIFactory.Porcelain : UIFactory.SilverText);
+                UIFactory.AddLayoutElement(lbl.gameObject, flexibleWidth: 1);
+                
+                if (!terrainOk)
+                {
+                    Text req = UIFactory.CreateText(row.transform, "Req", $"TERRAIN: {terrain}", 8, TextAnchor.MiddleRight, UIFactory.ImperialCrimson);
+                    UIFactory.AddLayoutElement(req.gameObject, preferredWidth: 100);
+                }
+                else
+                {
+                    IndustryType ct = type; int gc = goldCost; int ic = ironCost;
+                    Button ab = UIFactory.CreateButton(row.transform, "Add", canAfford ? "CONSTRUIRE" : "FONDS ✗", 9, () =>
+                    {
+                        if (city != null && canAfford && playerFac != null)
+                        {
+                            playerFac.gold -= gc; playerFac.iron -= ic;
+                            city.AddIndustry(ct); cityPanelDirty = true; RefreshCityPanel();
+                        }
+                    });
+                    UIFactory.AddLayoutElement(ab.gameObject, preferredWidth: 85, preferredHeight: 22);
+                    ab.interactable = canAfford;
+                }
+            }
+        }
+        
+        /// <summary>Equipment stockpile row showing current stock for a specific equipment type</summary>
+        private void AddEquipmentRow(Transform parent, string name, EquipmentType type, EquipmentStockpile stockpile)
+        {
+            float stock = stockpile.Get(type);
+            Color col = stock > 50 ? Color.green : stock > 10 ? UIFactory.EmpireGold : Color.red;
+            AddInfoRow(parent, $"  {name}", $"{stock:F0} en stock", col);
+        }
+        
+        private string GetIndustryName(IndustryType type)
+        {
+            return type switch
+            {
+                IndustryType.Agriculture => "Agriculture",
+                IndustryType.Mining => "Extraction minière",
+                IndustryType.Logging => "Exploitation forestière",
+                IndustryType.Commerce => "Commerce",
+                IndustryType.Manufacturing => "Manufacture",
+                IndustryType.Fishing => "Pêcherie",
+                IndustryType.Shipbuilding => "Chantier naval",
+                IndustryType.Textile => "Textile",
+                _ => type.ToString()
+            };
+        }
+        
+        private string GetIndustryIcon(IndustryType type)
+        {
+            return type switch
+            {
+                IndustryType.Agriculture => "🌾",
+                IndustryType.Mining => "⛏",
+                IndustryType.Logging => "🪵",
+                IndustryType.Commerce => "💰",
+                IndustryType.Manufacturing => "🔧",
+                IndustryType.Fishing => "🐟",
+                IndustryType.Shipbuilding => "⛵",
+                IndustryType.Textile => "🧵",
+                _ => "❓"
+            };
         }
         
         // ─── HELPERS ──────────────────────────────────────────────
@@ -1842,6 +2266,11 @@ namespace NapoleonicWars.UI
             Text t = UIFactory.CreateText(parent, "Info", text, fontSize, TextAnchor.MiddleLeft, color);
             if (bold) t.fontStyle = FontStyle.Bold;
             UIFactory.AddLayoutElement(t.gameObject, fontSize + 8);
+        }
+
+        private void AddInfoRow(Transform parent, string label, string value, Color color, int fontSize = 12)
+        {
+            AddInfoRow(parent, $"{label}: {value}", color, fontSize);
         }
         
         private void AddSpacer(Transform parent, int height)

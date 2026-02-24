@@ -10,7 +10,10 @@ namespace NapoleonicWars.Units
         Line,
         Column,
         Square,
-        Skirmish
+        Skirmish,
+        Wedge,       // Cavalry V-formation (charge)
+        Oblique,     // Diagonal attack line (Frederick/Napoleon)
+        MixedOrder   // French Ordre Mixte (center column + flanking lines)
     }
 
     public class Regiment : MonoBehaviour
@@ -69,6 +72,13 @@ namespace NapoleonicWars.Units
         public bool IsVolleyMode => isVolleyMode;
         public int TeamId { get; set; } = 0;
         public bool OfficerAlive { get; private set; } = true;
+        
+        /// <summary>
+        /// The regiment's intended facing direction (world-space).
+        /// Units should face this direction while moving in formation.
+        /// This is separate from transform.forward to avoid parent rotation dragging children.
+        /// </summary>
+        public Vector3 FacingDirection { get; private set; } = Vector3.forward;
         public float RegimentExperience => units.Count > 0 ? GetAverageExperience() : 0f;
         public int RegimentRankIndex { get; private set; } = 0;
         public RegimentRank RegimentRankEnum => (RegimentRank)RegimentRankIndex;
@@ -347,12 +357,8 @@ namespace NapoleonicWars.Units
         public void SetRankCount(int ranks)
         {
             desiredRanks = Mathf.Clamp(ranks, 0, 20); // 0 = auto
-            
-            // Reapply formation if currently in line formation
-            if (currentFormation == FormationType.Line)
-            {
-                ApplyFormation(false);
-            }
+            // NOTE: Do NOT call ApplyFormation here - MoveRegiment will handle the actual movement
+            // Calling ApplyFormation during line extension preview sends units backward
         }
 
         /// <summary>
@@ -638,6 +644,15 @@ namespace NapoleonicWars.Units
                 case FormationType.Skirmish:
                     FillSkirmishFormation(count);
                     break;
+                case FormationType.Wedge:
+                    FillWedgeFormation(count);
+                    break;
+                case FormationType.Oblique:
+                    FillObliqueFormation(count);
+                    break;
+                case FormationType.MixedOrder:
+                    FillMixedOrderFormation(count);
+                    break;
                 default:
                     FillLineFormation(count);
                     break;
@@ -846,6 +861,140 @@ namespace NapoleonicWars.Units
             }
         }
 
+        /// <summary>
+        /// Wedge (V) formation — cavalry charge formation.
+        /// Point man at front, expanding V-shape behind.
+        /// Historically used by cavalry to pierce enemy lines.
+        /// </summary>
+        private void FillWedgeFormation(int count)
+        {
+            int index = 0;
+            int rowsNeeded = 0;
+            int unitsPlaced = 0;
+            // Calculate how many rows we need
+            for (int r = 0; unitsPlaced < count; r++)
+            {
+                unitsPlaced += (r * 2 + 1);
+                rowsNeeded = r + 1;
+            }
+
+            int unitIdx = 0;
+            for (int row = 0; row < rowsNeeded && unitIdx < count; row++)
+            {
+                int unitsInRow = row * 2 + 1; // 1, 3, 5, 7, ...
+                float startX = -(unitsInRow - 1) * unitSpacing * 0.5f;
+                for (int col = 0; col < unitsInRow && unitIdx < count; col++)
+                {
+                    pooledFormationPositions[unitIdx].x = startX + col * unitSpacing;
+                    pooledFormationPositions[unitIdx].y = 0f;
+                    pooledFormationPositions[unitIdx].z = -row * rowSpacing;
+                    unitIdx++;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Oblique Line formation — Frederick the Great's innovation.
+        /// A diagonal line where one flank is advanced ahead of the other,
+        /// concentrating force on one point while refusing the other flank.
+        /// Used at Leuthen (1757) and adopted by Napoleon.
+        /// </summary>
+        private void FillObliqueFormation(int count)
+        {
+            int rows = ComputeEffectiveRanks(count);
+            int cols = Mathf.CeilToInt((float)count / rows);
+            
+            float startX = -(cols - 1) * unitSpacing * 0.5f;
+            float startZ = -(rows - 1) * rowSpacing * 0.5f;
+            
+            // Oblique angle: each column is staggered forward
+            // Creates a diagonal line from left-rear to right-front
+            float obliqueStagger = rowSpacing * 0.6f; // How much diagonal offset per column
+
+            int index = 0;
+            for (int row = 0; row < rows && index < count; row++)
+            {
+                for (int col = 0; col < cols && index < count; col++)
+                {
+                    pooledFormationPositions[index].x = startX + col * unitSpacing;
+                    pooledFormationPositions[index].y = 0f;
+                    // Each column advances slightly forward (creating the oblique diagonal)
+                    pooledFormationPositions[index].z = startZ + row * rowSpacing + col * obliqueStagger;
+                    index++;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Mixed Order (Ordre Mixte) — Napoleon's signature formation.
+        /// Center battalion in column, flanking battalions in line.
+        /// Combines the firepower of line with the shock of column.
+        /// The formation that won Austerlitz.
+        /// </summary>
+        private void FillMixedOrderFormation(int count)
+        {
+            if (count <= 6)
+            {
+                FillLineFormation(count); // Too few for mixed order
+                return;
+            }
+
+            int index = 0;
+            
+            // Split into 3 sections: left wing (line), center (column), right wing (line)
+            int centerCount = Mathf.Max(count / 3, 4);
+            int wingCount = (count - centerCount) / 2;
+            int rightWingCount = count - centerCount - wingCount; // Handles odd numbers
+            
+            // === CENTER COLUMN (dense, deep) ===
+            int colCols = 4; // Narrow column
+            int colRows = Mathf.CeilToInt((float)centerCount / colCols);
+            float centerStartX = -(colCols - 1) * unitSpacing * 0.5f;
+            
+            for (int row = 0; row < colRows && index < centerCount; row++)
+            {
+                for (int col = 0; col < colCols && index < centerCount; col++)
+                {
+                    pooledFormationPositions[index].x = centerStartX + col * unitSpacing;
+                    pooledFormationPositions[index].y = 0f;
+                    pooledFormationPositions[index].z = -row * rowSpacing;
+                    index++;
+                }
+            }
+            
+            // === LEFT WING (thin line, slightly behind) ===
+            int lineRows = 2; // Thin line
+            int lineCols = Mathf.CeilToInt((float)wingCount / lineRows);
+            float wingOffset = (colCols * unitSpacing * 0.5f) + unitSpacing * 2f; // Gap from center
+            float lineStartZ = -rowSpacing; // Slightly behind center column tip
+            
+            for (int row = 0; row < lineRows && index < centerCount + wingCount; row++)
+            {
+                for (int col = 0; col < lineCols && index < centerCount + wingCount; col++)
+                {
+                    pooledFormationPositions[index].x = -wingOffset - col * unitSpacing;
+                    pooledFormationPositions[index].y = 0f;
+                    pooledFormationPositions[index].z = lineStartZ + row * rowSpacing;
+                    index++;
+                }
+            }
+            
+            // === RIGHT WING (thin line, slightly behind) ===
+            int rightLineCols = Mathf.CeilToInt((float)rightWingCount / lineRows);
+            
+            for (int row = 0; row < lineRows && index < count; row++)
+            {
+                for (int col = 0; col < rightLineCols && index < count; col++)
+                {
+                    pooledFormationPositions[index].x = wingOffset + col * unitSpacing;
+                    pooledFormationPositions[index].y = 0f;
+                    pooledFormationPositions[index].z = lineStartZ + row * rowSpacing;
+                    index++;
+                }
+            }
+        }
+
+
         private Vector3 currentDestination;
         private bool hasMoveOrder = false;
         private float moveCooldown = 0f; // Prevents AI from re-issuing moves too rapidly
@@ -884,10 +1033,11 @@ namespace NapoleonicWars.Units
             Vector3 moveDirection = destination - transform.position;
             moveDirection.y = 0f;
             
-            // Smooth regiment facing direction (slerped in Update)
+            // Smooth regiment facing direction
             if (moveDirection.sqrMagnitude > 1f)
             {
                 targetRegimentFacing = Quaternion.LookRotation(moveDirection.normalized);
+                FacingDirection = moveDirection.normalized;
             }
             
             // Compute the facing rotation for formation layout
@@ -941,8 +1091,9 @@ namespace NapoleonicWars.Units
             List<UnitBase> aliveUnits = GetAliveUnits();
             if (aliveUnits.Count == 0) return;
             
-            // Set target regiment facing direction from angle (will slerp in Update)
+            // Set target regiment facing direction from angle
             targetRegimentFacing = Quaternion.Euler(0f, facingAngle, 0f);
+            FacingDirection = targetRegimentFacing * Vector3.forward;
             
             // Use the target facing for computing formation layout
             Quaternion rotation = targetRegimentFacing;
@@ -970,10 +1121,11 @@ namespace NapoleonicWars.Units
                 
                 for (int col = 0; col < unitsThisRow; col++)
                 {
+                    // Row 0 = front rank (at destination), deeper rows go BEHIND
                     Vector3 localPos = new Vector3(
                         rowOffsetX + col * unitSpacing,
                         0f,
-                        row * rowSpacing
+                        -row * rowSpacing
                     );
                     Vector3 rotatedOffset = rotation * localPos;
                     pooledFormationWorldPos[index] = destination + rotatedOffset;

@@ -65,25 +65,19 @@ namespace NapoleonicWars.UI
             canvas = UIFactory.CreateCanvas("MinimapCanvas", 15);
             canvas.transform.SetParent(transform);
 
-            // Outer border - responsive sizing (top-right corner, ~12% width)
-            minimapPanel = UIFactory.CreateOrnatePanel(canvas.transform, "MinimapPanel",
-                new Color(0.12f, 0.13f, 0.11f, 0.95f));
-            minimapPanel.anchorMin = new Vector2(0.87f, 0.75f);
-            minimapPanel.anchorMax = new Vector2(0.995f, 0.995f);
+            // Outer border - Ornate Prestige Panel
+            minimapPanel = UIFactory.CreateOrnatePanel(canvas.transform, "MinimapPanel", UIFactory.DeepCharcoal);
+            minimapPanel.anchorMin = new Vector2(0.86f, 0.74f);
+            minimapPanel.anchorMax = new Vector2(0.99f, 0.99f);
             minimapPanel.offsetMin = Vector2.zero;
             minimapPanel.offsetMax = Vector2.zero;
 
             Transform inner = minimapPanel.Find("Inner");
 
-            // Title
-            Text title = UIFactory.CreateText(inner, "Title", "MINIMAP", 11, TextAnchor.MiddleCenter, UIFactory.GoldAccent);
+            // Title - Strategic Intelligence
+            Text title = UIFactory.CreateText(inner, "Title", "STRATEGIC MAP", 12, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
             title.fontStyle = FontStyle.Bold;
-            RectTransform titleRT = title.GetComponent<RectTransform>();
-            titleRT.anchorMin = new Vector2(0, 1);
-            titleRT.anchorMax = new Vector2(1, 1);
-            titleRT.pivot = new Vector2(0.5f, 1);
-            titleRT.anchoredPosition = Vector2.zero;
-            titleRT.sizeDelta = new Vector2(0, 18);
+            UIFactory.SetAnchors(title.gameObject, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, -22), Vector2.zero);
 
             // Map image
             mapImage = UIFactory.CreateRawImage(inner, "MapImage");

@@ -23,6 +23,7 @@ namespace NapoleonicWars.Core
 
         // Line extension (right-click drag to space out formation)
         private bool isExtendingLine = false;
+        public bool IsExtendingLine => isExtendingLine;
         private bool isInFormationMode = false;
         private Vector3 lineExtendStartPos;
         private Regiment lineExtendingRegiment;
@@ -421,11 +422,12 @@ namespace NapoleonicWars.Core
                     {
                         for (int col = 0; col < unitsPerRank && index < unitCount; col++)
                         {
-                            // Local position: x goes right from left edge, z goes back for rows
+                            // Local position: x goes right from left edge, z goes BACKWARD for rows
+                            // Row 0 = front rank (at the line), deeper rows go BEHIND
                             Vector3 localPos = new Vector3(
                                 col * previewSpacing,
                                 0f,
-                                row * rowSpacing
+                                -row * rowSpacing
                             );
                             // Rotate and translate to world position
                             previewPositions[index] = leftEdge + rotation * localPos;
@@ -597,6 +599,9 @@ namespace NapoleonicWars.Core
             if (InputManager.Instance.FormationColumn) newFormation = FormationType.Column;
             if (InputManager.Instance.FormationSquare) newFormation = FormationType.Square;
             if (InputManager.Instance.FormationSkirmish) newFormation = FormationType.Skirmish;
+            if (InputManager.Instance.FormationWedge) newFormation = FormationType.Wedge;
+            if (InputManager.Instance.FormationOblique) newFormation = FormationType.Oblique;
+            if (InputManager.Instance.FormationMixed) newFormation = FormationType.MixedOrder;
 
             if (newFormation.HasValue)
             {

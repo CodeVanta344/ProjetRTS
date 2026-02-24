@@ -27,6 +27,9 @@ namespace NapoleonicWars.Core
         public bool FormationColumn => Input.GetKeyDown(KeyCode.F2);
         public bool FormationSquare => Input.GetKeyDown(KeyCode.F3);
         public bool FormationSkirmish => Input.GetKeyDown(KeyCode.F4);
+        public bool FormationWedge => Input.GetKeyDown(KeyCode.F5);
+        public bool FormationOblique => Input.GetKeyDown(KeyCode.F6);
+        public bool FormationMixed => Input.GetKeyDown(KeyCode.F7);
 
         // Command hotkeys
         public bool VolleyToggle => Input.GetKeyDown(KeyCode.V);

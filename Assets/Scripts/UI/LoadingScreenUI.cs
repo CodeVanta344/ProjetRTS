@@ -8,8 +8,9 @@ using NapoleonicWars.Data;
 namespace NapoleonicWars.UI
 {
     /// <summary>
-    /// Full-screen loading screen with async scene loading, progress bar, faction theme, and historical tips.
-    /// Singleton — persists across scenes via DontDestroyOnLoad.
+    /// Cinematic loading screen with Ken Burns pan/zoom on Napoleonic era artwork,
+    /// crossfade between paintings, dramatic vignette, faction-themed accents,
+    /// and historical tips. Loads images from Resources/LoadingScreens/ at runtime.
     /// </summary>
     public class LoadingScreenUI : MonoBehaviour
     {
@@ -17,24 +18,46 @@ namespace NapoleonicWars.UI
 
         private Canvas canvas;
         private CanvasGroup canvasGroup;
-        private Image backgroundImage;
+
+        // Background artwork system
+        private RawImage artworkImageA;
+        private RawImage artworkImageB;
+        private CanvasGroup artworkGroupA;
+        private CanvasGroup artworkGroupB;
+        private RectTransform artworkRTA;
+        private RectTransform artworkRTB;
+        private List<Texture2D> artworkTextures = new List<Texture2D>();
+        private int currentArtworkIndex = 0;
+        private bool showingA = true;
+
+        // UI elements
         private Image progressBarFill;
         private Image progressBarGlow;
         private Text progressText;
         private Text tipText;
         private Text factionNameText;
         private Text loadingLabel;
+        private Text subtitleText;
         private Image factionAccentTop;
         private Image factionAccentBot;
-        private Image vignetteOverlay;
 
         private bool isLoading = false;
         private float displayedProgress = 0f;
         private float realProgressTarget = 0f;
         private int currentTipIndex = 0;
         private float tipTimer = 0f;
+        private float artworkTimer = 0f;
+        private float kenBurnsTime = 0f;
 
-        // ─── FACTION COLORS ───
+        // Ken Burns parameters (randomized per image)
+        private float kbStartScale = 1.08f;
+        private float kbEndScale = 1.18f;
+        private Vector2 kbPanStart = Vector2.zero;
+        private Vector2 kbPanEnd = Vector2.zero;
+        private float kbDuration = 12f;
+
+        // ─── FACTION DATA ───
+
         private static readonly Color[] FactionThemeColors = {
             new Color(0.15f, 0.30f, 0.75f),    // France
             new Color(0.75f, 0.15f, 0.15f),    // Britain
@@ -72,6 +95,16 @@ namespace NapoleonicWars.UI
             "KURFÜRSTENTUM HANNOVER", "DUCATO DI MODENA", "DUCATO DI PARMA", "DUCHÉ DE LORRAINE"
         };
 
+        private static readonly string[] FactionSubtitles = {
+            "Gloire et Conquête", "Rule Britannia", "Für König und Vaterland",
+            "За Веру, Царя и Отечество", "Gott erhalte den Kaiser", "Plus Ultra", "Devlet-i Ebed Müddet",
+            "Além-Mar", "Sverige i krig", "Gud og Kongen", "Za Wolność Naszą",
+            "La Serenissima", "Eendracht Maakt Macht",
+            "In Treue fest", "Providentiae Memor", "Deus lo Vult", "FERT",
+            "Unus pro omnibus", "Libertas", "Fiorenza",
+            "Suscipere et Finire", "Deo Confide", "Pro Patria", "Je Maintiendrai"
+        };
+
         // ─── HISTORICAL TIPS ───
         private static readonly string[] LoadingTips = {
             "La Grande Armée de Napoléon comptait plus de 600 000 hommes lors de l'invasion de la Russie en 1812.",
@@ -90,6 +123,8 @@ namespace NapoleonicWars.UI
             "La Garde Impériale était la réserve d'élite, engagée uniquement au moment décisif.",
             "Les dragons pouvaient combattre à pied comme à cheval, offrant une grande polyvalence.",
             "Le terrain élevé conférait un avantage décisif pour l'artillerie et la défense.",
+            "Napoléon dictait souvent ses ordres en marchant, parfois à trois secrétaires simultanément.",
+            "L'Aigle impérial, porté par chaque régiment, était considéré comme sacré par les soldats.",
         };
 
         // ─── LIFECYCLE ───
@@ -103,6 +138,7 @@ namespace NapoleonicWars.UI
             }
             Instance = this;
             DontDestroyOnLoad(gameObject);
+            LoadArtwork();
             BuildUI();
             Hide();
         }
@@ -111,52 +147,137 @@ namespace NapoleonicWars.UI
         {
             if (!isLoading) return;
 
-            // Smooth progress bar — never jumps, lerps toward real target
-            float smoothSpeed = 0.35f; // slow enough to feel real
+            // Smooth progress bar
+            float smoothSpeed = 4.5f;
             displayedProgress = Mathf.Lerp(displayedProgress, realProgressTarget, Time.unscaledDeltaTime * smoothSpeed);
-            // Snap close when very near target to avoid stuck-at-99 feeling
+            displayedProgress = Mathf.MoveTowards(displayedProgress, realProgressTarget, Time.unscaledDeltaTime * 0.1f); // Guarantee exact reach
             if (realProgressTarget - displayedProgress < 0.005f)
                 displayedProgress = realProgressTarget;
             UpdateProgressVisuals(displayedProgress);
 
+            // Ken Burns pan/zoom effect
+            kenBurnsTime += Time.unscaledDeltaTime;
+            ApplyKenBurns(showingA ? artworkRTA : artworkRTB);
+
+            // Cycle artwork every kbDuration seconds
+            artworkTimer += Time.unscaledDeltaTime;
+            if (artworkTimer > kbDuration && artworkTextures.Count > 1)
+            {
+                artworkTimer = 0f;
+                CrossfadeToNextArtwork();
+            }
+
             // Cycle tips
             tipTimer += Time.unscaledDeltaTime;
-            if (tipTimer > 4.5f)
+            if (tipTimer > 5.5f)
             {
                 tipTimer = 0f;
                 CycleTip();
             }
 
-            // Pulse the glow on the progress bar
+            // Pulse the progress glow
             if (progressBarGlow != null)
             {
-                float pulse = 0.3f + Mathf.Sin(Time.unscaledTime * 3f) * 0.2f;
+                float pulse = 0.35f + Mathf.Sin(Time.unscaledTime * 2.5f) * 0.25f;
                 Color gc = progressBarGlow.color;
                 progressBarGlow.color = new Color(gc.r, gc.g, gc.b, pulse);
             }
 
-            // Pulse loading dots
+            // Animate loading dots
             if (loadingLabel != null)
             {
-                int dots = ((int)(Time.unscaledTime * 2f)) % 4;
+                int dots = ((int)(Time.unscaledTime * 1.5f)) % 4;
                 loadingLabel.text = "CHARGEMENT" + new string('.', dots);
             }
         }
 
+        // ─── ARTWORK LOADING ───
+
+        private void LoadArtwork()
+        {
+            // Load all textures from Resources/LoadingScreens/
+            Texture2D[] loaded = Resources.LoadAll<Texture2D>("LoadingScreens");
+            if (loaded != null && loaded.Length > 0)
+            {
+                artworkTextures.AddRange(loaded);
+                // Shuffle
+                for (int i = artworkTextures.Count - 1; i > 0; i--)
+                {
+                    int j = Random.Range(0, i + 1);
+                    var tmp = artworkTextures[i];
+                    artworkTextures[i] = artworkTextures[j];
+                    artworkTextures[j] = tmp;
+                }
+            }
+        }
+
+        private void RandomizeKenBurns()
+        {
+            kbStartScale = Random.Range(1.08f, 1.14f);
+            kbEndScale = Random.Range(1.16f, 1.25f);
+            kbPanStart = new Vector2(Random.Range(-20f, 20f), Random.Range(-10f, 10f));
+            kbPanEnd = new Vector2(Random.Range(-20f, 20f), Random.Range(-10f, 10f));
+            kbDuration = Random.Range(10f, 14f);
+            kenBurnsTime = 0f;
+        }
+
+        private void ApplyKenBurns(RectTransform rt)
+        {
+            if (rt == null) return;
+            float t = Mathf.Clamp01(kenBurnsTime / kbDuration);
+            float smoothT = Mathf.SmoothStep(0f, 1f, t);
+            float scale = Mathf.Lerp(kbStartScale, kbEndScale, smoothT);
+            Vector2 pan = Vector2.Lerp(kbPanStart, kbPanEnd, smoothT);
+            rt.localScale = Vector3.one * scale;
+            rt.anchoredPosition = pan;
+        }
+
+        private void CrossfadeToNextArtwork()
+        {
+            if (artworkTextures.Count < 2) return;
+
+            currentArtworkIndex = (currentArtworkIndex + 1) % artworkTextures.Count;
+            RandomizeKenBurns();
+
+            if (showingA)
+            {
+                artworkImageB.texture = artworkTextures[currentArtworkIndex];
+                artworkRTB.localScale = Vector3.one * kbStartScale;
+                StartCoroutine(CrossfadeArtwork(artworkGroupA, artworkGroupB, 1.5f));
+            }
+            else
+            {
+                artworkImageA.texture = artworkTextures[currentArtworkIndex];
+                artworkRTA.localScale = Vector3.one * kbStartScale;
+                StartCoroutine(CrossfadeArtwork(artworkGroupB, artworkGroupA, 1.5f));
+            }
+            showingA = !showingA;
+        }
+
+        private IEnumerator CrossfadeArtwork(CanvasGroup fadeOut, CanvasGroup fadeIn, float duration)
+        {
+            float t = 0f;
+            fadeIn.alpha = 0f;
+            while (t < duration)
+            {
+                t += Time.unscaledDeltaTime;
+                float p = Mathf.SmoothStep(0f, 1f, t / duration);
+                fadeOut.alpha = 1f - p;
+                fadeIn.alpha = p;
+                yield return null;
+            }
+            fadeOut.alpha = 0f;
+            fadeIn.alpha = 1f;
+        }
+
         // ─── PUBLIC API ───
 
-        /// <summary>
-        /// Load a scene asynchronously with the loading screen displayed.
-        /// </summary>
         public void LoadScene(string sceneName, int factionIndex = -1)
         {
             if (isLoading) return;
             StartCoroutine(LoadSceneRoutine(sceneName, factionIndex));
         }
 
-        /// <summary>
-        /// Static convenience: load scene with loading screen. Creates instance if needed.
-        /// </summary>
         public static void LoadSceneWithScreen(string sceneName, int factionIndex = -1)
         {
             if (Instance == null)
@@ -175,58 +296,54 @@ namespace NapoleonicWars.UI
             displayedProgress = 0f;
             realProgressTarget = 0f;
             tipTimer = 0f;
+            artworkTimer = 0f;
             currentTipIndex = Random.Range(0, LoadingTips.Length);
 
-            // Apply faction theme
+            // Setup artwork
+            if (artworkTextures.Count > 0)
+            {
+                currentArtworkIndex = Random.Range(0, artworkTextures.Count);
+                artworkImageA.texture = artworkTextures[currentArtworkIndex];
+                artworkGroupA.alpha = 1f;
+                artworkGroupB.alpha = 0f;
+                showingA = true;
+                RandomizeKenBurns();
+            }
+
             ApplyFactionTheme(factionIndex);
-
-            // Show with fade-in
             Show();
-            yield return StartCoroutine(FadeIn(0.4f));
+            yield return StartCoroutine(FadeIn(0.5f));
 
-            // Start async scene load
             AsyncOperation asyncOp = SceneManager.LoadSceneAsync(sceneName);
             asyncOp.allowSceneActivation = false;
 
-            // ── Phase 1: real asset loading (asyncOp 0→0.9 = bar 0%→90%) ──
-            // Unity caps at 0.9 while allowSceneActivation == false
+            // Phase 1: Assets loading (0→90%)
             while (asyncOp.progress < 0.9f)
             {
-                realProgressTarget = asyncOp.progress / 0.9f * 0.9f; // 0→90%
+                realProgressTarget = asyncOp.progress / 0.9f * 0.9f;
                 yield return null;
             }
 
-            // Assets loaded — set bar to 90%
             realProgressTarget = 0.9f;
-
-            // Wait for the displayed bar to actually catch up to 90%
             while (displayedProgress < 0.89f)
                 yield return null;
 
-            // ── Phase 2: scene activation (90%→100%) ──
-            // Now allow the scene to activate — this triggers all Awake/Start/OnEnable
+            // Phase 2: Scene activation (90→100%)
             asyncOp.allowSceneActivation = true;
-
-            // While Unity is integrating the scene, progress goes 0.9→1.0
             while (!asyncOp.isDone)
             {
-                // Map 0.9→1.0 of asyncOp to 90%→100% of bar
                 float activationProgress = Mathf.InverseLerp(0.9f, 1f, asyncOp.progress);
                 realProgressTarget = 0.9f + activationProgress * 0.1f;
                 yield return null;
             }
 
-            // Scene is fully loaded and initialized — set 100%
             realProgressTarget = 1f;
             displayedProgress = 1f;
             UpdateProgressVisuals(1f);
             if (loadingLabel != null) loadingLabel.text = "PRÊT";
 
-            // Brief pause so the player sees 100% before fade-out
-            yield return new WaitForSecondsRealtime(0.4f);
-
-            // Fade out
-            yield return StartCoroutine(FadeOut(0.5f));
+            yield return new WaitForSecondsRealtime(0.5f);
+            yield return StartCoroutine(FadeOut(0.6f));
 
             Hide();
             isLoading = false;
@@ -271,139 +388,209 @@ namespace NapoleonicWars.UI
             canvas = canvasGO.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 999;
-            canvasGO.AddComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            canvasGO.GetComponent<CanvasScaler>().referenceResolution = new Vector2(1920, 1080);
+            var scaler = canvasGO.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920, 1080);
+            scaler.matchWidthOrHeight = 0.5f;
             canvasGO.AddComponent<GraphicRaycaster>();
 
             canvasGroup = canvasGO.AddComponent<CanvasGroup>();
             canvasGroup.blocksRaycasts = true;
             canvasGroup.interactable = false;
 
-            // ── BACKGROUND ──
-            GameObject bgGO = new GameObject("Background");
-            bgGO.transform.SetParent(canvas.transform, false);
-            RectTransform bgRT = bgGO.AddComponent<RectTransform>();
-            bgRT.anchorMin = Vector2.zero; bgRT.anchorMax = Vector2.one;
-            bgRT.offsetMin = Vector2.zero; bgRT.offsetMax = Vector2.zero;
-            backgroundImage = bgGO.AddComponent<Image>();
-            backgroundImage.color = new Color(0.02f, 0.015f, 0.01f, 1f);
+            // ── BLACK UNDERLAY (prevents any flash) ──
+            CreateFullscreenImage(canvas.transform, "BlackUnderlay", Color.black);
 
-            // ── VIGNETTE OVERLAY (dark edges) ──
-            GameObject vigGO = new GameObject("Vignette");
-            vigGO.transform.SetParent(canvas.transform, false);
-            RectTransform vigRT = vigGO.AddComponent<RectTransform>();
-            vigRT.anchorMin = Vector2.zero; vigRT.anchorMax = Vector2.one;
-            vigRT.offsetMin = Vector2.zero; vigRT.offsetMax = Vector2.zero;
-            vignetteOverlay = vigGO.AddComponent<Image>();
-            vignetteOverlay.color = new Color(0, 0, 0, 0.3f);
-            vignetteOverlay.raycastTarget = false;
+            // ── ARTWORK LAYER A (background painting with Ken Burns) ──
+            artworkImageA = CreateArtworkLayer(canvas.transform, "ArtworkA", out artworkGroupA, out artworkRTA);
 
-            // ── TOP ACCENT BAR ──
-            GameObject topBarGO = new GameObject("TopAccent");
-            topBarGO.transform.SetParent(canvas.transform, false);
-            RectTransform topBarRT = topBarGO.AddComponent<RectTransform>();
-            topBarRT.anchorMin = new Vector2(0, 0.96f); topBarRT.anchorMax = Vector2.one;
+            // ── ARTWORK LAYER B (crossfade target) ──
+            artworkImageB = CreateArtworkLayer(canvas.transform, "ArtworkB", out artworkGroupB, out artworkRTB);
+            artworkGroupB.alpha = 0f;
+
+            // ── CINEMATIC VIGNETTE (dark edges, dramatic focus) ──
+            // Top dark gradient
+            Image topVig = CreateFullscreenImage(canvas.transform, "VigTop", Color.clear);
+            RectTransform topVigRT = topVig.GetComponent<RectTransform>();
+            topVigRT.anchorMin = new Vector2(0, 0.55f); topVigRT.anchorMax = Vector2.one;
+            topVigRT.offsetMin = Vector2.zero; topVigRT.offsetMax = Vector2.zero;
+            topVig.color = new Color(0, 0, 0, 0.55f);
+
+            // Bottom dark gradient (heavier for text readability)
+            Image botVig = CreateFullscreenImage(canvas.transform, "VigBot", Color.clear);
+            RectTransform botVigRT = botVig.GetComponent<RectTransform>();
+            botVigRT.anchorMin = Vector2.zero; botVigRT.anchorMax = new Vector2(1, 0.45f);
+            botVigRT.offsetMin = Vector2.zero; botVigRT.offsetMax = Vector2.zero;
+            botVig.color = new Color(0, 0, 0, 0.7f);
+
+            // Full overlay vignette (subtle darkening)
+            Image fullVig = CreateFullscreenImage(canvas.transform, "VigFull", new Color(0, 0, 0, 0.2f));
+
+            // ── TOP ACCENT BAR (faction colored) ──
+            factionAccentTop = CreateFullscreenImage(canvas.transform, "TopAccent", UIFactory.BorderGold);
+            RectTransform topBarRT = factionAccentTop.GetComponent<RectTransform>();
+            topBarRT.anchorMin = new Vector2(0, 0.99f); topBarRT.anchorMax = Vector2.one;
             topBarRT.offsetMin = Vector2.zero; topBarRT.offsetMax = Vector2.zero;
-            factionAccentTop = topBarGO.AddComponent<Image>();
-            factionAccentTop.color = UIFactory.BorderGold;
-            factionAccentTop.raycastTarget = false;
+
+            // Top gold line below accent
+            CreateLine(canvas.transform, new Vector2(0, 0.985f), new Vector2(1, 0.988f), 
+                new Color(0.7f, 0.58f, 0.28f, 0.4f));
 
             // ── BOTTOM ACCENT BAR ──
-            GameObject botBarGO = new GameObject("BotAccent");
-            botBarGO.transform.SetParent(canvas.transform, false);
-            RectTransform botBarRT = botBarGO.AddComponent<RectTransform>();
-            botBarRT.anchorMin = Vector2.zero; botBarRT.anchorMax = new Vector2(1, 0.04f);
+            factionAccentBot = CreateFullscreenImage(canvas.transform, "BotAccent", UIFactory.BorderGold);
+            RectTransform botBarRT = factionAccentBot.GetComponent<RectTransform>();
+            botBarRT.anchorMin = Vector2.zero; botBarRT.anchorMax = new Vector2(1, 0.01f);
             botBarRT.offsetMin = Vector2.zero; botBarRT.offsetMax = Vector2.zero;
-            factionAccentBot = botBarGO.AddComponent<Image>();
-            factionAccentBot.color = UIFactory.BorderGold;
-            factionAccentBot.raycastTarget = false;
 
-            // ── DECORATIVE GOLD LINES ──
-            CreateGoldLine(canvas.transform, new Vector2(0, 0.945f), new Vector2(1, 0.95f));
-            CreateGoldLine(canvas.transform, new Vector2(0, 0.05f), new Vector2(1, 0.055f));
+            // Bottom gold line above accent
+            CreateLine(canvas.transform, new Vector2(0, 0.012f), new Vector2(1, 0.015f),
+                new Color(0.7f, 0.58f, 0.28f, 0.4f));
 
-            // ── CENTER EMBLEM AREA ──
-            // Faction crest / eagle silhouette
-            Text emblemText = CreateText(canvas.transform, "Emblem", "⚜",
-                120, TextAnchor.MiddleCenter, new Color(1f, 0.85f, 0.4f, 0.08f));
-            SetAnchors(emblemText.gameObject, new Vector2(0.35f, 0.35f), new Vector2(0.65f, 0.75f));
-
-            // ── FACTION NAME (large, center) ──
-            factionNameText = CreateText(canvas.transform, "FactionName", "EMPIRE FRANÇAIS",
-                42, TextAnchor.MiddleCenter, new Color(1f, 0.88f, 0.55f, 0.95f));
+            // ── CENTER CONTENT: FACTION NAME (large, cinematic) ──
+            factionNameText = CreateCinematicText(canvas.transform, "FactionName", "EMPIRE FRANÇAIS",
+                52, TextAnchor.MiddleCenter, new Color(1f, 0.9f, 0.6f, 0.95f));
             factionNameText.fontStyle = FontStyle.Bold;
-            SetAnchors(factionNameText.gameObject, new Vector2(0.1f, 0.58f), new Vector2(0.9f, 0.72f));
-            Shadow fnShadow = factionNameText.gameObject.AddComponent<Shadow>();
-            fnShadow.effectColor = new Color(0, 0, 0, 0.9f);
-            fnShadow.effectDistance = new Vector2(3, -3);
+            SetAnchors(factionNameText.gameObject, new Vector2(0.05f, 0.48f), new Vector2(0.95f, 0.62f));
+
+            // Faction subtitle (below name)
+            subtitleText = CreateCinematicText(canvas.transform, "Subtitle", "Gloire et Conquête",
+                20, TextAnchor.MiddleCenter, new Color(0.85f, 0.75f, 0.55f, 0.7f));
+            subtitleText.fontStyle = FontStyle.Italic;
+            SetAnchors(subtitleText.gameObject, new Vector2(0.2f, 0.42f), new Vector2(0.8f, 0.50f));
+
+            // Decorative line under subtitle
+            CreateLine(canvas.transform, new Vector2(0.35f, 0.415f), new Vector2(0.65f, 0.42f),
+                new Color(0.65f, 0.55f, 0.30f, 0.5f));
 
             // ── LOADING LABEL ──
-            loadingLabel = CreateText(canvas.transform, "LoadingLabel", "CHARGEMENT...",
-                18, TextAnchor.MiddleCenter, new Color(0.75f, 0.65f, 0.45f));
+            loadingLabel = CreateCinematicText(canvas.transform, "LoadingLabel", "CHARGEMENT...",
+                16, TextAnchor.MiddleCenter, new Color(0.8f, 0.7f, 0.5f, 0.9f));
             loadingLabel.fontStyle = FontStyle.Bold;
-            SetAnchors(loadingLabel.gameObject, new Vector2(0.3f, 0.26f), new Vector2(0.7f, 0.32f));
+            SetAnchors(loadingLabel.gameObject, new Vector2(0.3f, 0.24f), new Vector2(0.7f, 0.30f));
 
-            // ── PROGRESS BAR ──
-            BuildProgressBar(canvas.transform);
+            // ── PROGRESS BAR (cinematic) ──
+            BuildCinematicProgressBar(canvas.transform);
 
-            // ── PROGRESS TEXT ──
-            progressText = CreateText(canvas.transform, "ProgressText", "0%",
-                14, TextAnchor.MiddleCenter, new Color(0.8f, 0.7f, 0.5f));
-            SetAnchors(progressText.gameObject, new Vector2(0.45f, 0.155f), new Vector2(0.55f, 0.195f));
+            // ── PROGRESS PERCENTAGE ──
+            progressText = CreateCinematicText(canvas.transform, "ProgressText", "0%",
+                13, TextAnchor.MiddleCenter, new Color(0.85f, 0.75f, 0.55f, 0.8f));
+            SetAnchors(progressText.gameObject, new Vector2(0.45f, 0.145f), new Vector2(0.55f, 0.175f));
 
-            // ── TIP TEXT ──
-            Text tipLabel = CreateText(canvas.transform, "TipLabel", "LE SAVIEZ-VOUS ?",
-                12, TextAnchor.MiddleCenter, new Color(0.6f, 0.5f, 0.35f, 0.8f));
+            // ── TIP SECTION (bottom) ──
+            // Separator line
+            CreateLine(canvas.transform, new Vector2(0.15f, 0.12f), new Vector2(0.85f, 0.124f),
+                new Color(0.5f, 0.42f, 0.25f, 0.3f));
+
+            Text tipLabel = CreateCinematicText(canvas.transform, "TipLabel", "— LE SAVIEZ-VOUS ? —",
+                11, TextAnchor.MiddleCenter, new Color(0.65f, 0.55f, 0.40f, 0.7f));
             tipLabel.fontStyle = FontStyle.Bold;
-            SetAnchors(tipLabel.gameObject, new Vector2(0.08f, 0.08f), new Vector2(0.92f, 0.12f));
+            SetAnchors(tipLabel.gameObject, new Vector2(0.1f, 0.08f), new Vector2(0.9f, 0.115f));
 
-            tipText = CreateText(canvas.transform, "TipText", LoadingTips[0],
-                13, TextAnchor.UpperCenter, new Color(0.82f, 0.75f, 0.60f, 0.9f));
+            tipText = CreateCinematicText(canvas.transform, "TipText", LoadingTips[0],
+                13, TextAnchor.UpperCenter, new Color(0.88f, 0.82f, 0.68f, 0.85f));
             tipText.fontStyle = FontStyle.Italic;
-            SetAnchors(tipText.gameObject, new Vector2(0.08f, 0.055f), new Vector2(0.92f, 0.085f));
+            SetAnchors(tipText.gameObject, new Vector2(0.1f, 0.042f), new Vector2(0.9f, 0.082f));
 
             // ── DECORATIVE CORNER ORNAMENTS ──
-            Text ornTL = CreateText(canvas.transform, "OrnTL", "╔══", 16, TextAnchor.UpperLeft, new Color(0.6f, 0.5f, 0.3f, 0.4f));
-            SetAnchors(ornTL.gameObject, new Vector2(0.02f, 0.92f), new Vector2(0.1f, 0.96f));
-            Text ornTR = CreateText(canvas.transform, "OrnTR", "══╗", 16, TextAnchor.UpperRight, new Color(0.6f, 0.5f, 0.3f, 0.4f));
-            SetAnchors(ornTR.gameObject, new Vector2(0.9f, 0.92f), new Vector2(0.98f, 0.96f));
-            Text ornBL = CreateText(canvas.transform, "OrnBL", "╚══", 16, TextAnchor.LowerLeft, new Color(0.6f, 0.5f, 0.3f, 0.4f));
-            SetAnchors(ornBL.gameObject, new Vector2(0.02f, 0.04f), new Vector2(0.1f, 0.08f));
-            Text ornBR = CreateText(canvas.transform, "OrnBR", "══╝", 16, TextAnchor.LowerRight, new Color(0.6f, 0.5f, 0.3f, 0.4f));
-            SetAnchors(ornBR.gameObject, new Vector2(0.9f, 0.04f), new Vector2(0.98f, 0.08f));
+            CreateCornerOrnament(canvas.transform, "TL", new Vector2(0.015f, 0.935f), new Vector2(0.06f, 0.965f), "╔══", TextAnchor.UpperLeft);
+            CreateCornerOrnament(canvas.transform, "TR", new Vector2(0.94f, 0.935f), new Vector2(0.985f, 0.965f), "══╗", TextAnchor.UpperRight);
+            CreateCornerOrnament(canvas.transform, "BL", new Vector2(0.015f, 0.035f), new Vector2(0.06f, 0.065f), "╚══", TextAnchor.LowerLeft);
+            CreateCornerOrnament(canvas.transform, "BR", new Vector2(0.94f, 0.035f), new Vector2(0.985f, 0.065f), "══╝", TextAnchor.LowerRight);
         }
 
-        private void BuildProgressBar(Transform parent)
+        private RawImage CreateArtworkLayer(Transform parent, string name, out CanvasGroup group, out RectTransform rt)
         {
-            // Outer frame (gold border)
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = new Vector2(-150, -100); // Oversized for Ken Burns movement
+            rt.offsetMax = new Vector2(150, 100);
+
+            RawImage img = go.AddComponent<RawImage>();
+            img.color = Color.white;
+            img.raycastTarget = false;
+
+            group = go.AddComponent<CanvasGroup>();
+            group.alpha = 1f;
+            group.blocksRaycasts = false;
+            group.interactable = false;
+
+            return img;
+        }
+
+        private void BuildCinematicProgressBar(Transform parent)
+        {
+            // === ORNATE OUTER FRAME (double gold border) ===
             GameObject frameGO = new GameObject("ProgressFrame");
             frameGO.transform.SetParent(parent, false);
-            RectTransform frameRT = frameGO.AddComponent<RectTransform>();
-            SetAnchors(frameGO, new Vector2(0.2f, 0.195f), new Vector2(0.8f, 0.245f));
+            SetAnchors(frameGO, new Vector2(0.22f, 0.185f), new Vector2(0.78f, 0.215f));
+
+            // Outer gold border
             Image frameImg = frameGO.AddComponent<Image>();
-            frameImg.color = new Color(0.55f, 0.45f, 0.25f, 0.8f);
+            frameImg.color = new Color(0.55f, 0.45f, 0.22f, 0.85f);
 
-            // Inner background (dark)
-            GameObject innerGO = new GameObject("ProgressInner");
-            innerGO.transform.SetParent(frameGO.transform, false);
-            RectTransform innerRT = innerGO.AddComponent<RectTransform>();
-            innerRT.anchorMin = Vector2.zero; innerRT.anchorMax = Vector2.one;
-            innerRT.offsetMin = new Vector2(2, 2); innerRT.offsetMax = new Vector2(-2, -2);
-            Image innerImg = innerGO.AddComponent<Image>();
-            innerImg.color = new Color(0.03f, 0.025f, 0.02f, 0.95f);
+            // Subtle outer glow
+            Outline frameOutline = frameGO.AddComponent<Outline>();
+            frameOutline.effectColor = new Color(0.6f, 0.5f, 0.25f, 0.15f);
+            frameOutline.effectDistance = new Vector2(3f, 3f);
 
-            // Fill bar
+            // Inner gold border (double border effect)
+            GameObject innerBorderGO = new GameObject("InnerBorder");
+            innerBorderGO.transform.SetParent(frameGO.transform, false);
+            RectTransform ibRT = innerBorderGO.AddComponent<RectTransform>();
+            ibRT.anchorMin = Vector2.zero; ibRT.anchorMax = Vector2.one;
+            ibRT.offsetMin = new Vector2(2, 2); ibRT.offsetMax = new Vector2(-2, -2);
+            Image ibImg = innerBorderGO.AddComponent<Image>();
+            ibImg.color = new Color(0.03f, 0.025f, 0.02f, 0.95f); // Dark inner bg
+
+            // Second gold line (inner frame)
+            GameObject innerFrame2 = new GameObject("InnerFrame2");
+            innerFrame2.transform.SetParent(innerBorderGO.transform, false);
+            RectTransform if2RT = innerFrame2.AddComponent<RectTransform>();
+            if2RT.anchorMin = Vector2.zero; if2RT.anchorMax = Vector2.one;
+            if2RT.offsetMin = new Vector2(1, 1); if2RT.offsetMax = new Vector2(-1, -1);
+            Outline if2Outline = innerFrame2.AddComponent<Outline>();
+            if2Outline.effectColor = new Color(0.45f, 0.38f, 0.2f, 0.5f);
+            if2Outline.effectDistance = new Vector2(1f, 1f);
+            Image if2Img = innerFrame2.AddComponent<Image>();
+            if2Img.color = new Color(0.05f, 0.04f, 0.03f, 0.9f); // Very dark bg for fill
+
+            // === FILL BAR (warm amber/gold) ===
             GameObject fillGO = new GameObject("ProgressFill");
-            fillGO.transform.SetParent(innerGO.transform, false);
+            fillGO.transform.SetParent(if2RT.transform, false);
             RectTransform fillRT = fillGO.AddComponent<RectTransform>();
             fillRT.anchorMin = Vector2.zero;
             fillRT.anchorMax = new Vector2(0f, 1f);
             fillRT.offsetMin = new Vector2(1, 1);
             fillRT.offsetMax = new Vector2(-1, -1);
             progressBarFill = fillGO.AddComponent<Image>();
-            progressBarFill.color = new Color(0.75f, 0.60f, 0.25f);
+            progressBarFill.color = new Color(0.72f, 0.55f, 0.18f); // Warm amber gold
 
-            // Glow overlay on fill
+            // Top highlight strip (metallic sheen effect)
+            GameObject highlight = new GameObject("FillHighlight");
+            highlight.transform.SetParent(fillGO.transform, false);
+            RectTransform hlRT = highlight.AddComponent<RectTransform>();
+            hlRT.anchorMin = new Vector2(0, 0.6f);
+            hlRT.anchorMax = Vector2.one;
+            hlRT.offsetMin = Vector2.zero; hlRT.offsetMax = Vector2.zero;
+            Image hlImg = highlight.AddComponent<Image>();
+            hlImg.color = new Color(1f, 0.9f, 0.6f, 0.2f);
+            hlImg.raycastTarget = false;
+
+            // Bottom shadow strip (depth)
+            GameObject bottomShadow = new GameObject("FillShadow");
+            bottomShadow.transform.SetParent(fillGO.transform, false);
+            RectTransform bsRT = bottomShadow.AddComponent<RectTransform>();
+            bsRT.anchorMin = Vector2.zero;
+            bsRT.anchorMax = new Vector2(1, 0.3f);
+            bsRT.offsetMin = Vector2.zero; bsRT.offsetMax = Vector2.zero;
+            Image bsImg = bottomShadow.AddComponent<Image>();
+            bsImg.color = new Color(0.3f, 0.2f, 0.05f, 0.3f);
+            bsImg.raycastTarget = false;
+
+            // Leading edge glow (pulsing)
             GameObject glowGO = new GameObject("ProgressGlow");
             glowGO.transform.SetParent(fillGO.transform, false);
             RectTransform glowRT = glowGO.AddComponent<RectTransform>();
@@ -411,23 +598,41 @@ namespace NapoleonicWars.UI
             glowRT.anchorMax = Vector2.one;
             glowRT.offsetMin = Vector2.zero; glowRT.offsetMax = Vector2.zero;
             progressBarGlow = glowGO.AddComponent<Image>();
-            progressBarGlow.color = new Color(1f, 0.95f, 0.7f, 0.4f);
+            progressBarGlow.color = new Color(1f, 0.9f, 0.55f, 0.5f);
             progressBarGlow.raycastTarget = false;
 
-            // Subtle hash marks on the bar (10%, 25%, 50%, 75%)
+            // Ornate tick marks
             float[] marks = { 0.25f, 0.5f, 0.75f };
             foreach (float m in marks)
             {
                 GameObject markGO = new GameObject($"Mark_{m}");
-                markGO.transform.SetParent(innerGO.transform, false);
+                markGO.transform.SetParent(if2RT.transform, false);
                 RectTransform markRT = markGO.AddComponent<RectTransform>();
-                markRT.anchorMin = new Vector2(m - 0.001f, 0);
-                markRT.anchorMax = new Vector2(m + 0.001f, 1);
+                markRT.anchorMin = new Vector2(m - 0.001f, 0.15f);
+                markRT.anchorMax = new Vector2(m + 0.001f, 0.85f);
                 markRT.offsetMin = Vector2.zero; markRT.offsetMax = Vector2.zero;
                 Image markImg = markGO.AddComponent<Image>();
-                markImg.color = new Color(0.4f, 0.35f, 0.25f, 0.3f);
+                markImg.color = new Color(0.5f, 0.42f, 0.22f, 0.3f);
                 markImg.raycastTarget = false;
             }
+
+            // Corner ornaments on the bar (small gold dots)
+            CreateBarCorner(frameGO.transform, new Vector2(0, 1), new Vector2(0.01f, 0.8f));
+            CreateBarCorner(frameGO.transform, new Vector2(0.99f, 1), new Vector2(1, 0.8f));
+            CreateBarCorner(frameGO.transform, new Vector2(0, 0.2f), new Vector2(0.01f, 0));
+            CreateBarCorner(frameGO.transform, new Vector2(0.99f, 0.2f), new Vector2(1, 0));
+        }
+
+        private void CreateBarCorner(Transform parent, Vector2 anchorMin, Vector2 anchorMax)
+        {
+            GameObject go = new GameObject("Corner");
+            go.transform.SetParent(parent, false);
+            RectTransform rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = anchorMin; rt.anchorMax = anchorMax;
+            rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+            Image img = go.AddComponent<Image>();
+            img.color = new Color(0.85f, 0.7f, 0.35f, 0.7f);
+            img.raycastTarget = false;
         }
 
         // ─── THEME ───
@@ -437,31 +642,23 @@ namespace NapoleonicWars.UI
             if (factionIndex < 0 || factionIndex >= FactionThemeColors.Length)
                 factionIndex = PlayerPrefs.GetInt("SelectedFaction", 0);
 
-            Color themeColor = FactionThemeColors[Mathf.Clamp(factionIndex, 0, FactionThemeColors.Length - 1)];
-            string factionName = FactionLoadingNames[Mathf.Clamp(factionIndex, 0, FactionLoadingNames.Length - 1)];
+            int idx = Mathf.Clamp(factionIndex, 0, FactionThemeColors.Length - 1);
+            Color themeColor = FactionThemeColors[idx];
 
-            // Background: very dark version of faction color
-            if (backgroundImage != null)
-                backgroundImage.color = new Color(themeColor.r * 0.06f, themeColor.g * 0.06f, themeColor.b * 0.06f, 1f);
+            if (factionAccentTop != null) factionAccentTop.color = themeColor;
+            if (factionAccentBot != null) factionAccentBot.color = themeColor;
 
-            // Accent bars
-            if (factionAccentTop != null)
-                factionAccentTop.color = themeColor;
-            if (factionAccentBot != null)
-                factionAccentBot.color = themeColor;
-
-            // Progress bar fill uses faction color blended with gold
             if (progressBarFill != null)
-                progressBarFill.color = Color.Lerp(themeColor, new Color(0.50f, 0.48f, 0.38f), 0.4f);
+                progressBarFill.color = Color.Lerp(new Color(0.72f, 0.55f, 0.18f), themeColor, 0.1f);
 
-            // Faction name
-            if (factionNameText != null)
-                factionNameText.text = factionName;
+            if (factionNameText != null && idx < FactionLoadingNames.Length)
+                factionNameText.text = FactionLoadingNames[idx];
 
-            // Set first tip
+            if (subtitleText != null && idx < FactionSubtitles.Length)
+                subtitleText.text = "— " + FactionSubtitles[idx] + " —";
+
             currentTipIndex = Random.Range(0, LoadingTips.Length);
-            if (tipText != null)
-                tipText.text = LoadingTips[currentTipIndex];
+            if (tipText != null) tipText.text = LoadingTips[currentTipIndex];
         }
 
         // ─── HELPERS ───
@@ -473,7 +670,6 @@ namespace NapoleonicWars.UI
                 RectTransform fillRT = progressBarFill.GetComponent<RectTransform>();
                 fillRT.anchorMax = new Vector2(Mathf.Clamp01(progress), 1f);
             }
-
             if (progressText != null)
                 progressText.text = $"{Mathf.RoundToInt(progress * 100)}%";
         }
@@ -488,22 +684,20 @@ namespace NapoleonicWars.UI
         private IEnumerator FadeTip(string newTip)
         {
             if (tipText == null) yield break;
-            // Fade out
             Color c = tipText.color;
             float t = 0f;
-            while (t < 0.2f)
+            while (t < 0.25f)
             {
                 t += Time.unscaledDeltaTime;
-                tipText.color = new Color(c.r, c.g, c.b, Mathf.Lerp(c.a, 0f, t / 0.2f));
+                tipText.color = new Color(c.r, c.g, c.b, Mathf.Lerp(c.a, 0f, t / 0.25f));
                 yield return null;
             }
             tipText.text = newTip;
-            // Fade in
             t = 0f;
-            while (t < 0.3f)
+            while (t < 0.35f)
             {
                 t += Time.unscaledDeltaTime;
-                tipText.color = new Color(c.r, c.g, c.b, Mathf.Lerp(0f, c.a, t / 0.3f));
+                tipText.color = new Color(c.r, c.g, c.b, Mathf.Lerp(0f, c.a, t / 0.35f));
                 yield return null;
             }
             tipText.color = c;
@@ -519,19 +713,39 @@ namespace NapoleonicWars.UI
             if (canvas != null) canvas.gameObject.SetActive(false);
         }
 
-        private void CreateGoldLine(Transform parent, Vector2 anchorMin, Vector2 anchorMax)
+        private Image CreateFullscreenImage(Transform parent, string name, Color color)
         {
-            GameObject lineGO = new GameObject("GoldLine");
-            lineGO.transform.SetParent(parent, false);
-            RectTransform lineRT = lineGO.AddComponent<RectTransform>();
-            lineRT.anchorMin = anchorMin; lineRT.anchorMax = anchorMax;
-            lineRT.offsetMin = Vector2.zero; lineRT.offsetMax = Vector2.zero;
-            Image lineImg = lineGO.AddComponent<Image>();
-            lineImg.color = new Color(0.65f, 0.55f, 0.30f, 0.5f);
-            lineImg.raycastTarget = false;
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            RectTransform rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+            Image img = go.AddComponent<Image>();
+            img.color = color;
+            img.raycastTarget = false;
+            return img;
         }
 
-        private Text CreateText(Transform parent, string name, string content, int fontSize, TextAnchor anchor, Color color)
+        private void CreateLine(Transform parent, Vector2 anchorMin, Vector2 anchorMax, Color color)
+        {
+            GameObject go = new GameObject("Line");
+            go.transform.SetParent(parent, false);
+            RectTransform rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = anchorMin; rt.anchorMax = anchorMax;
+            rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+            Image img = go.AddComponent<Image>();
+            img.color = color;
+            img.raycastTarget = false;
+        }
+
+        private void CreateCornerOrnament(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax, string text, TextAnchor anchor)
+        {
+            Text ornament = CreateCinematicText(parent, "Orn_" + name, text,
+                14, anchor, new Color(0.6f, 0.5f, 0.3f, 0.35f));
+            SetAnchors(ornament.gameObject, anchorMin, anchorMax);
+        }
+
+        private Text CreateCinematicText(Transform parent, string name, string content, int fontSize, TextAnchor anchor, Color color)
         {
             GameObject go = new GameObject(name);
             go.transform.SetParent(parent, false);
@@ -545,6 +759,13 @@ namespace NapoleonicWars.UI
             txt.raycastTarget = false;
             txt.horizontalOverflow = HorizontalWrapMode.Wrap;
             txt.verticalOverflow = VerticalWrapMode.Overflow;
+            txt.supportRichText = true;
+
+            // Cinematic shadow on all text
+            Shadow shadow = go.AddComponent<Shadow>();
+            shadow.effectColor = new Color(0, 0, 0, 0.85f);
+            shadow.effectDistance = new Vector2(2f, -2f);
+
             return txt;
         }
 

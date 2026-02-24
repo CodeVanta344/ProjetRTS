@@ -71,17 +71,18 @@ namespace NapoleonicWars.UI
 
         private void BuildWindIndicator()
         {
-            windPanel = UIFactory.CreatePanel(canvas.transform, "WindPanel", new Color(0.1f, 0.2f, 0.3f, 0.8f));
-            UIFactory.SetAnchors(windPanel, new Vector2(0.02f, 0.75f), new Vector2(0.12f, 0.98f), Vector2.zero, Vector2.zero);
+            windPanel = UIFactory.CreateOrnatePanel(canvas.transform, "WindPanel", UIFactory.DeepCharcoal);
+            UIFactory.SetAnchors(windPanel.gameObject, new Vector2(0.01f, 0.78f), new Vector2(0.12f, 0.98f), Vector2.zero, Vector2.zero);
 
-            Text title = UIFactory.CreateText(windPanel, "Title", "WIND", 14, TextAnchor.MiddleCenter, UIFactory.TextGold);
-            UIFactory.SetAnchors(title.gameObject, new Vector2(0f, 0.85f), new Vector2(1f, 1f), Vector2.zero, Vector2.zero);
+            Text title = UIFactory.CreateText(windPanel.Find("Inner"), "Title", "WIND DIRECTION", 12, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
+            title.fontStyle = FontStyle.Bold;
+            UIFactory.SetAnchors(title.gameObject, new Vector2(0f, 0.82f), new Vector2(1f, 1f), Vector2.zero, Vector2.zero);
 
             // Wind arrow (compass rose style)
             GameObject arrowGO = new GameObject("WindArrow");
-            arrowGO.transform.SetParent(windPanel, false);
+            arrowGO.transform.SetParent(windPanel.Find("Inner"), false);
             windArrow = arrowGO.AddComponent<RectTransform>();
-            UIFactory.SetAnchors(arrowGO, new Vector2(0.2f, 0.3f), new Vector2(0.8f, 0.8f), Vector2.zero, Vector2.zero);
+            UIFactory.SetAnchors(arrowGO, new Vector2(0.2f, 0.25f), new Vector2(0.8f, 0.75f), Vector2.zero, Vector2.zero);
 
             // Arrow visual
             Image arrowImg = arrowGO.AddComponent<Image>();
@@ -91,80 +92,82 @@ namespace NapoleonicWars.UI
             GameObject arrowHead = new GameObject("ArrowHead");
             arrowHead.transform.SetParent(arrowGO.transform, false);
             Image headImg = arrowHead.AddComponent<Image>();
-            headImg.color = new Color(0.8f, 0.9f, 1f);
+            headImg.color = UIFactory.EmpireGold;
             RectTransform headRect = arrowHead.GetComponent<RectTransform>();
-            headRect.anchorMin = new Vector2(0.3f, 0.5f);
-            headRect.anchorMax = new Vector2(0.7f, 1f);
+            headRect.anchorMin = new Vector2(0.35f, 0.55f);
+            headRect.anchorMax = new Vector2(0.65f, 1f);
             headRect.offsetMin = Vector2.zero;
             headRect.offsetMax = Vector2.zero;
 
-            windStrengthText = UIFactory.CreateText(windPanel, "Strength", "Moderate", 11, TextAnchor.MiddleCenter, UIFactory.TextGrey);
+            windStrengthText = UIFactory.CreateText(windPanel.Find("Inner"), "Strength", "CALM", 11, TextAnchor.MiddleCenter, UIFactory.SilverText);
             UIFactory.SetAnchors(windStrengthText.gameObject, new Vector2(0f, 0f), new Vector2(1f, 0.2f), Vector2.zero, Vector2.zero);
         }
 
         private void BuildShipPanel()
         {
-            shipPanel = UIFactory.CreatePanel(canvas.transform, "ShipPanel", new Color(0.1f, 0.15f, 0.2f, 0.9f));
-            UIFactory.SetAnchors(shipPanel, new Vector2(0.02f, 0.02f), new Vector2(0.25f, 0.35f), Vector2.zero, Vector2.zero);
+            RectTransform panel = UIFactory.CreateOrnatePanel(canvas.transform, "ShipPanel", UIFactory.DeepCharcoal);
+            UIFactory.SetAnchors(panel.gameObject, new Vector2(0.01f, 0.02f), new Vector2(0.22f, 0.35f), Vector2.zero, Vector2.zero);
+            shipPanel = panel;
+
+            Transform inner = panel.Find("Inner");
+            UIFactory.AddVerticalLayout(inner.gameObject, 0f, new RectOffset(12, 12, 8, 8));
 
             // Ship name
-            shipNameText = UIFactory.CreateText(shipPanel, "ShipName", "No Ship Selected", 16, TextAnchor.MiddleLeft, Color.white);
-            UIFactory.SetAnchors(shipNameText.gameObject, new Vector2(0.05f, 0.85f), new Vector2(0.95f, 0.98f), Vector2.zero, Vector2.zero);
+            shipNameText = UIFactory.CreateText(inner, "Name", "NO SHIP SELECTED", 14, TextAnchor.MiddleLeft, UIFactory.EmpireGold);
             shipNameText.fontStyle = FontStyle.Bold;
+            UIFactory.AddLayoutElement(shipNameText.gameObject, preferredHeight: 24);
+
+            UIFactory.CreateSeparator(inner);
 
             // Ship type
-            shipTypeText = UIFactory.CreateText(shipPanel, "ShipType", "", 12, TextAnchor.MiddleLeft, UIFactory.TextGrey);
-            UIFactory.SetAnchors(shipTypeText.gameObject, new Vector2(0.05f, 0.75f), new Vector2(0.95f, 0.85f), Vector2.zero, Vector2.zero);
+            shipTypeText = UIFactory.CreateText(inner, "Type", "", 12, TextAnchor.MiddleLeft, UIFactory.SilverText);
+            UIFactory.AddLayoutElement(shipTypeText.gameObject, preferredHeight: 20);
 
-            // Hull bar
-            CreateStatBar(shipPanel, "Hull", new Color(0.6f, 0.3f, 0.2f), 0.6f, out hullBar, out hullText);
-            
-            // Sail bar
-            CreateStatBar(shipPanel, "Sails", new Color(0.9f, 0.9f, 0.8f), 0.45f, out sailBar, out sailText);
-            
-            // Crew bar
-            CreateStatBar(shipPanel, "Crew", new Color(0.3f, 0.5f, 0.7f), 0.3f, out crewBar, out crewText);
+            // Stat bars
+            CreateStatBar(inner, "HULL", UIFactory.ImperialCrimson, out hullBar, out hullText);
+            CreateStatBar(inner, "SAILS", UIFactory.Parchment, out sailBar, out sailText);
+            CreateStatBar(inner, "CREW", UIFactory.SilverText, out crewBar, out crewText);
 
-            // Cannons
-            cannonsText = UIFactory.CreateText(shipPanel, "Cannons", "Cannons: 0/0", 11, TextAnchor.MiddleLeft, UIFactory.TextGrey);
-            UIFactory.SetAnchors(cannonsText.gameObject, new Vector2(0.05f, 0.12f), new Vector2(0.5f, 0.22f), Vector2.zero, Vector2.zero);
+            UIFactory.CreateSeparator(inner);
 
-            // Speed
-            speedText = UIFactory.CreateText(shipPanel, "Speed", "Speed: 0 kts", 11, TextAnchor.MiddleLeft, UIFactory.TextGrey);
-            UIFactory.SetAnchors(speedText.gameObject, new Vector2(0.5f, 0.12f), new Vector2(0.95f, 0.22f), Vector2.zero, Vector2.zero);
+            // Info rows
+            GameObject info = new GameObject("Info");
+            info.transform.SetParent(inner, false);
+            UIFactory.AddHorizontalLayout(info, 10f);
+            UIFactory.AddLayoutElement(info, preferredHeight: 20);
+
+            cannonsText = UIFactory.CreateText(info.transform, "Cannons", "CANNONS: 0", 11, TextAnchor.MiddleLeft, UIFactory.Porcelain);
+            speedText = UIFactory.CreateText(info.transform, "Speed", "0.0 KTS", 11, TextAnchor.MiddleRight, UIFactory.EmpireGold);
 
             // Reload status
-            reloadLeftText = UIFactory.CreateText(shipPanel, "ReloadLeft", "Port: Ready", 10, TextAnchor.MiddleLeft, new Color(0.5f, 0.8f, 0.5f));
-            UIFactory.SetAnchors(reloadLeftText.gameObject, new Vector2(0.05f, 0.02f), new Vector2(0.5f, 0.12f), Vector2.zero, Vector2.zero);
+            GameObject reload = new GameObject("Reload");
+            reload.transform.SetParent(inner, false);
+            UIFactory.AddHorizontalLayout(reload, 10f);
+            UIFactory.AddLayoutElement(reload, preferredHeight: 20);
 
-            reloadRightText = UIFactory.CreateText(shipPanel, "ReloadRight", "Starboard: Ready", 10, TextAnchor.MiddleLeft, new Color(0.5f, 0.8f, 0.5f));
-            UIFactory.SetAnchors(reloadRightText.gameObject, new Vector2(0.5f, 0.02f), new Vector2(0.95f, 0.12f), Vector2.zero, Vector2.zero);
+            reloadLeftText = UIFactory.CreateText(reload.transform, "Port", "PORT: READY", 10, TextAnchor.MiddleLeft, UIFactory.EmpireGold);
+            reloadRightText = UIFactory.CreateText(reload.transform, "Starboard", "STARBOARD: READY", 10, TextAnchor.MiddleRight, UIFactory.EmpireGold);
 
             shipPanel.gameObject.SetActive(false);
         }
 
-        private void CreateStatBar(Transform parent, string label, Color barColor, float yPos, out Image fillBar, out Text valueText)
+        private void CreateStatBar(Transform parent, string label, Color color, out Image fill, out Text value)
         {
-            // Label
-            Text labelText = UIFactory.CreateText(parent, $"{label}Label", label, 10, TextAnchor.MiddleLeft, UIFactory.TextGrey);
-            UIFactory.SetAnchors(labelText.gameObject, new Vector2(0.05f, yPos), new Vector2(0.25f, yPos + 0.1f), Vector2.zero, Vector2.zero);
+            GameObject row = new GameObject(label + "Row");
+            row.transform.SetParent(parent, false);
+            UIFactory.AddHorizontalLayout(row, 6f);
+            UIFactory.AddLayoutElement(row, preferredHeight: 14);
 
-            // Background
-            RectTransform bgRT = UIFactory.CreatePanel(parent, $"{label}Bg", new Color(0.2f, 0.2f, 0.2f));
-            UIFactory.SetAnchors(bgRT, new Vector2(0.27f, yPos + 0.02f), new Vector2(0.85f, yPos + 0.08f), Vector2.zero, Vector2.zero);
-
-            // Fill
-            RectTransform fillRT = UIFactory.CreatePanel(bgRT, $"{label}Fill", barColor);
-            fillBar = fillRT.GetComponent<Image>();
-            fillRT.anchorMin = Vector2.zero;
-            fillRT.anchorMax = Vector2.one;
-            fillRT.offsetMin = Vector2.zero;
-            fillRT.offsetMax = Vector2.zero;
-
-            // Value text
-            valueText = UIFactory.CreateText(parent, $"{label}Value", "100%", 10, TextAnchor.MiddleRight, Color.white);
-            UIFactory.SetAnchors(valueText.gameObject, new Vector2(0.86f, yPos), new Vector2(0.95f, yPos + 0.1f), Vector2.zero, Vector2.zero);
+            UIFactory.CreateText(row.transform, "Lbl", label, 10, TextAnchor.MiddleLeft, UIFactory.SilverText);
+            var (bg, f) = UIFactory.CreateProgressBar(row.transform, "Bar", color);
+            fill = f;
+            UIFactory.AddLayoutElement(bg.gameObject, flexibleWidth: 1);
+            
+            value = UIFactory.CreateText(row.transform, "Val", "100%", 10, TextAnchor.MiddleRight, UIFactory.Porcelain);
+            UIFactory.AddLayoutElement(value.gameObject, preferredWidth: 40);
         }
+
+
 
         private void BuildFleetOverview()
         {

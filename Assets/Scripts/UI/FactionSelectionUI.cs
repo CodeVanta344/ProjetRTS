@@ -7,45 +7,46 @@ using NapoleonicWars.Data;
 
 namespace NapoleonicWars.UI
 {
+    /// <summary>
+    /// Total War-inspired faction selection screen.
+    /// Left panel: scrollable faction list with flag thumbnails.
+    /// Center: large ornate flag of selected faction.
+    /// Right: detailed faction info, stats, and campaign options.
+    /// </summary>
     public class FactionSelectionUI : MonoBehaviour
     {
         private Canvas canvas;
         private FactionType selectedFaction = FactionType.France;
 
-        // References for dynamic updates
-        private GameObject[] factionCards = new GameObject[24];
-        private Image[] cardFlags = new Image[24];
-        private Image[] cardGlows = new Image[24];
-        private GameObject[] cardCheckmarks = new GameObject[24];
-        private Sprite[] flagSprites = new Sprite[24];
-        private Text[] cardNames = new Text[24];
+        // Faction list entries (left panel)
+        private GameObject[] listEntries = new GameObject[24];
+        private Image[] listFlags = new Image[24];
+        private Text[] listNames = new Text[24];
+        private Image[] listBgs = new Image[24];
+        private Image[] listSelectIndicators = new Image[24];
 
-        // Detail panel references
+        // Detail panel (right side)
         private Image detailFlagImage;
         private Text detailFactionName;
         private Text detailMotto;
         private Text detailDescription;
-        private Text detailStats;
-        private Image detailAccentBar;
-        private Image detailAccentBarBot;
-        private Image[] difficultyPips = new Image[5];
+        private Text detailCapital;
         private Text difficultyLabel;
-
-        // Stat bar references
         private Image[] statBarFills = new Image[6];
         private Text[] statBarLabels = new Text[6];
 
+
         // Buttons
         private Button startCampaignBtn;
-        private Text startBtnLabel;
+        private Sprite[] flagSprites = new Sprite[24];
 
         // Audio
         private AudioSource hoverSound;
         private AudioSource selectSound;
 
-        // Animation state
-        private int previousSelection = -1;
+        // Animation
         private Coroutine typewriterCoroutine;
+        private Coroutine pulseCoroutine;
 
         // ─── FACTION DATA ───────────────────────────────────────────────
 
@@ -59,11 +60,11 @@ namespace NapoleonicWars.UI
         };
 
         private static readonly string[] FactionShortNames = {
-            "FRANCE", "BRITAIN", "PRUSSIA", "RUSSIA", "AUSTRIA", "SPAIN", "OTTOMAN",
-            "PORTUGAL", "SWEDEN", "DENMARK", "POLAND",
-            "VENICE", "DUTCH", "BAVARIA", "SAXONY",
-            "PAPAL", "SAVOY", "SWISS", "GENOA",
-            "TUSCANY", "HANOVER", "MODENA", "PARMA", "LORRAINE"
+            "France", "Britain", "Prussia", "Russia", "Austria", "Spain", "Ottoman Empire",
+            "Portugal", "Sweden", "Denmark", "Poland",
+            "Venice", "Netherlands", "Bavaria", "Saxony",
+            "Papal States", "Savoy", "Switzerland", "Genoa",
+            "Tuscany", "Hanover", "Modena", "Parma", "Lorraine"
         };
 
         private static readonly string[] FactionMottos = {
@@ -158,104 +159,67 @@ namespace NapoleonicWars.UI
             "Army", "Navy", "Economy", "Population", "Forts", "Diplomacy"
         };
 
+        private static readonly string[] StatIcons = {
+            "⚔", "⚓", "💰", "👥", "🏰", "📜"
+        };
+
         private static readonly Color[] StatColors = {
-            new Color(0.85f, 0.30f, 0.20f), // Army - red
-            new Color(0.30f, 0.55f, 0.85f), // Navy - blue
-            new Color(0.85f, 0.75f, 0.25f), // Economy - gold
-            new Color(0.40f, 0.80f, 0.40f), // Population - green
-            new Color(0.65f, 0.50f, 0.35f), // Forts - brown
-            new Color(0.70f, 0.50f, 0.80f), // Diplomacy - purple
+            new Color(0.86f, 0.27f, 0.22f), // Army - matte red
+            new Color(0.24f, 0.35f, 0.50f), // Navy - steel blue
+            new Color(0.90f, 0.73f, 0.13f), // Economy - matte yellow
+            new Color(0.40f, 0.72f, 0.35f), // Population - matte green
+            new Color(0.50f, 0.50f, 0.50f), // Forts - grey
+            new Color(0.60f, 0.40f, 0.80f), // Diplomacy - purple
         };
 
         // Difficulty: 1-5 pips
-        private static readonly int[] FactionDifficulty = { 
-            2, 3, 4, 3, 4, 4, 5, // France, Britain, Prussia, Russia, Austria, Spain, Ottoman
-            4, 3, 4, 5,          // Portugal, Sweden, Denmark, Poland
-            4, 3, 4, 4,          // Venice, Dutch, Bavaria, Saxony
-            5, 4, 3, 4,          // Papal States, Savoy, Switzerland, Genoa
-            4, 4, 5, 5, 5        // Tuscany, Hanover, Modena, Parma, Lorraine
-        };
-
-        private static readonly Color[] FactionColors = {
-            new Color(0.15f, 0.30f, 0.75f),    // France — Deep Blue
-            new Color(0.75f, 0.15f, 0.15f),    // Britain — Red
-            new Color(0.20f, 0.20f, 0.22f),    // Prussia — Dark Grey
-            new Color(0.15f, 0.55f, 0.20f),    // Russia — Forest Green
-            new Color(0.92f, 0.82f, 0.35f),    // Austria — Warm Yellow
-            new Color(0.90f, 0.55f, 0.15f),    // Spain — Bright Orange
-            new Color(0.55f, 0.15f, 0.20f),    // Ottoman — Dark Maroon
-            new Color(0.20f, 0.80f, 0.20f),    // Portugal
-            new Color(0.20f, 0.40f, 0.80f),    // Sweden
-            new Color(0.80f, 0.20f, 0.20f),    // Denmark
-            new Color(0.80f, 0.20f, 0.40f),    // Poland
-            new Color(0.80f, 0.20f, 0.20f),    // Venice
-            new Color(0.90f, 0.50f, 0.10f),    // Dutch
-            new Color(0.20f, 0.60f, 0.90f),    // Bavaria
-            new Color(0.20f, 0.80f, 0.40f),    // Saxony
-            new Color(0.90f, 0.80f, 0.20f),    // Papal States
-            new Color(0.80f, 0.20f, 0.20f),    // Savoy
-            new Color(0.80f, 0.20f, 0.20f),    // Switzerland
-            new Color(0.80f, 0.20f, 0.20f),    // Genoa
-            new Color(0.80f, 0.20f, 0.20f),    // Tuscany
-            new Color(0.80f, 0.20f, 0.20f),    // Hanover
-            new Color(0.80f, 0.20f, 0.20f),    // Modena
-            new Color(0.80f, 0.20f, 0.20f),    // Parma
-            new Color(0.80f, 0.20f, 0.20f)     // Lorraine
+        private static readonly int[] FactionDifficulty = {
+            2, 3, 4, 3, 4, 4, 5,
+            4, 3, 4, 5,
+            4, 3, 4, 4,
+            5, 4, 3, 4,
+            4, 4, 5, 5, 5
         };
 
         private static readonly string[] FlagResourcePaths = {
-            "UI/Flags/flag_france",
-            "UI/Flags/flag_britain",
-            "UI/Flags/flag_prussia",
-            "UI/Flags/flag_russia",
-            "UI/Flags/flag_austria",
-            "UI/Flags/flag_spain",
-            "UI/Flags/flag_ottoman",
-            "UI/Flags/flag_portugal",
-            "UI/Flags/flag_sweden",
-            "UI/Flags/flag_denmark",
-            "UI/Flags/flag_poland",
-            "UI/Flags/flag_venice",
-            "UI/Flags/flag_dutch",
-            "UI/Flags/flag_bavaria",
-            "UI/Flags/flag_saxony",
-            "UI/Flags/flag_papal",
-            "UI/Flags/flag_savoy",
-            "UI/Flags/flag_switzerland",
-            "UI/Flags/flag_genoa",
-            "UI/Flags/flag_tuscany",
-            "UI/Flags/flag_hanover",
-            "UI/Flags/flag_modena",
-            "UI/Flags/flag_parma",
-            "UI/Flags/flag_lorraine"
+            "UI/Flags/flag_france", "UI/Flags/flag_britain", "UI/Flags/flag_prussia",
+            "UI/Flags/flag_russia", "UI/Flags/flag_austria", "UI/Flags/flag_spain",
+            "UI/Flags/flag_ottoman", "UI/Flags/flag_portugal", "UI/Flags/flag_sweden",
+            "UI/Flags/flag_denmark", "UI/Flags/flag_poland", "UI/Flags/flag_venice",
+            "UI/Flags/flag_dutch", "UI/Flags/flag_bavaria", "UI/Flags/flag_saxony",
+            "UI/Flags/flag_papal", "UI/Flags/flag_savoy", "UI/Flags/flag_switzerland",
+            "UI/Flags/flag_genoa", "UI/Flags/flag_tuscany", "UI/Flags/flag_hanover",
+            "UI/Flags/flag_modena", "UI/Flags/flag_parma", "UI/Flags/flag_lorraine"
         };
 
-        private static readonly string[] ModelResourcePaths = {
-            "Models/Soldiers/soldier_france_line",
-            "Models/Soldiers/soldier_britain_line",
-            "Models/Soldiers/soldier_prussia_line",
-            "Models/Soldiers/soldier_russia_line",
-            "Models/Soldiers/soldier_austria_line",
-            "Models/Soldiers/soldier_spain_line",
-            "Models/Soldiers/soldier_ottoman_line",
-            "Models/Soldiers/soldier_portugal_line",
-            "Models/Soldiers/soldier_sweden_line",
-            "Models/Soldiers/soldier_denmark_line",
-            "Models/Soldiers/soldier_poland_line",
-            "Models/Soldiers/soldier_venice_line",
-            "Models/Soldiers/soldier_dutch_line",
-            "Models/Soldiers/soldier_bavaria_line",
-            "Models/Soldiers/soldier_saxony_line",
-            "Models/Soldiers/soldier_papal_line",
-            "Models/Soldiers/soldier_savoy_line",
-            "Models/Soldiers/soldier_switzerland_line",
-            "Models/Soldiers/soldier_genoa_line",
-            "Models/Soldiers/soldier_tuscany_line",
-            "Models/Soldiers/soldier_hanover_line",
-            "Models/Soldiers/soldier_modena_line",
-            "Models/Soldiers/soldier_parma_line",
-            "Models/Soldiers/soldier_lorraine_line"
+        private static readonly Color[] FactionAccentColors = {
+            new Color(0.15f, 0.30f, 0.75f),    // France
+            new Color(0.75f, 0.15f, 0.15f),    // Britain
+            new Color(0.25f, 0.25f, 0.28f),    // Prussia
+            new Color(0.15f, 0.55f, 0.20f),    // Russia
+            new Color(0.85f, 0.75f, 0.25f),    // Austria
+            new Color(0.90f, 0.55f, 0.15f),    // Spain
+            new Color(0.55f, 0.15f, 0.20f),    // Ottoman
+            new Color(0.20f, 0.70f, 0.25f),    // Portugal
+            new Color(0.25f, 0.45f, 0.80f),    // Sweden
+            new Color(0.80f, 0.20f, 0.22f),    // Denmark
+            new Color(0.80f, 0.22f, 0.40f),    // Poland
+            new Color(0.80f, 0.25f, 0.22f),    // Venice
+            new Color(0.90f, 0.50f, 0.12f),    // Dutch
+            new Color(0.25f, 0.60f, 0.90f),    // Bavaria
+            new Color(0.22f, 0.75f, 0.40f),    // Saxony
+            new Color(0.90f, 0.82f, 0.22f),    // Papal
+            new Color(0.80f, 0.22f, 0.22f),    // Savoy
+            new Color(0.80f, 0.22f, 0.22f),    // Switzerland
+            new Color(0.80f, 0.22f, 0.22f),    // Genoa
+            new Color(0.80f, 0.22f, 0.22f),    // Tuscany
+            new Color(0.80f, 0.22f, 0.22f),    // Hanover
+            new Color(0.80f, 0.22f, 0.22f),    // Modena
+            new Color(0.80f, 0.22f, 0.22f),    // Parma
+            new Color(0.80f, 0.22f, 0.22f)     // Lorraine
         };
+
+        // ─── LIFECYCLE ──────────────────────────────────────────────────
 
         private void SetupAudio()
         {
@@ -265,14 +229,37 @@ namespace NapoleonicWars.UI
             selectSound.volume = 0.5f;
         }
 
+        private void Awake()
+        {
+            // Singleton guard — destroy any other instances BEFORE canvas rebuild
+            var all = Object.FindObjectsByType<FactionSelectionUI>(FindObjectsSortMode.None);
+            foreach (var other in all)
+            {
+                if (other != this)
+                {
+                    Debug.Log("[FactionSelectionUI] Destroying duplicate instance");
+                    Object.DestroyImmediate(other.gameObject);
+                }
+            }
+            
+            // Clean up any stale canvases from prior loads
+            foreach (var c in Object.FindObjectsByType<Canvas>(FindObjectsSortMode.None))
+            {
+                if (c.gameObject.name == "FactionSelectCanvas")
+                {
+                    Debug.Log("[FactionSelectionUI] Destroying stale FactionSelectCanvas");
+                    Object.DestroyImmediate(c.gameObject);
+                }
+            }
+        }
+
         private void Start()
         {
             SetupAudio();
             LoadFlagSprites();
             BuildUI();
             SelectFaction(FactionType.France);
-            StartCoroutine(AnimateSelectedCard());
-            StartCoroutine(PulseStartButton());
+            pulseCoroutine = StartCoroutine(PulseStartButton());
         }
 
         private void LoadFlagSprites()
@@ -282,9 +269,14 @@ namespace NapoleonicWars.UI
                 Texture2D tex = Resources.Load<Texture2D>(FlagResourcePaths[i]);
                 if (tex != null)
                 {
+                    // Force high-quality rendering
+                    tex.filterMode = FilterMode.Bilinear;
+                    tex.anisoLevel = 8;
+                    tex.wrapMode = TextureWrapMode.Clamp;
                     flagSprites[i] = Sprite.Create(tex,
                         new Rect(0, 0, tex.width, tex.height),
-                        new Vector2(0.5f, 0.5f));
+                        new Vector2(0.5f, 0.5f),
+                        100f, 0, SpriteMeshType.FullRect);
                 }
             }
         }
@@ -295,256 +287,175 @@ namespace NapoleonicWars.UI
         {
             canvas = UIFactory.CreateCanvas("FactionSelectCanvas", 10);
 
-            // === FULL-SCREEN DARK BACKGROUND ===
-            RectTransform bg = UIFactory.CreatePanel(canvas.transform, "Background", new Color(0.025f, 0.018f, 0.015f, 1f));
-            bg.anchorMin = Vector2.zero;
-            bg.anchorMax = Vector2.one;
-            bg.offsetMin = Vector2.zero;
-            bg.offsetMax = Vector2.zero;
+            // === FULL-SCREEN BACKGROUND (Pure Pitch Black) ===
+            GameObject bgGO = new GameObject("Background");
+            bgGO.transform.SetParent(canvas.transform, false);
+            RectTransform bgRT = bgGO.AddComponent<RectTransform>();
+            UIFactory.SetAnchors(bgRT, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            Image bgImg = bgGO.AddComponent<Image>();
+            bgImg.color = new Color(0.04f, 0.04f, 0.04f, 1f); // Almost pure black
+            
+            // Main Content Area - clustered in the center ~76% width
+            RectTransform mainContent = UIFactory.CreatePanel(bgRT, "MainContent", Color.clear);
+            UIFactory.SetAnchors(mainContent, new Vector2(0.12f, 0.10f), new Vector2(0.88f, 0.92f), Vector2.zero, Vector2.zero);
 
-            // Subtle warm gradient overlay at top
-            RectTransform topGrad = UIFactory.CreatePanel(bg, "TopGrad", new Color(0.08f, 0.04f, 0.02f, 0.4f));
-            topGrad.anchorMin = new Vector2(0, 0.7f);
-            topGrad.anchorMax = Vector2.one;
-            topGrad.offsetMin = Vector2.zero;
-            topGrad.offsetMax = Vector2.zero;
-            topGrad.GetComponent<Image>().raycastTarget = false;
+            // Build the three columns inside the centered container
+            BuildFactionList(mainContent);
+            BuildFlagDisplay(mainContent);
+            BuildInfoPanel(mainContent);
 
-            // === TOP BANNER ===
-            BuildTitleBanner(bg);
-
-            // === FACTION CARDS ROW ===
-            BuildFactionCardsRow(bg);
-
-            // === DETAIL PANEL ===
-            BuildDetailPanel(bg);
-
-            // === BOTTOM ACTION BAR ===
-            BuildActionBar(bg);
+            // Action bar sits below
+            BuildActionBar(bgRT);
         }
 
-        // ─── TITLE BANNER ───────────────────────────────────────────────
+        // ─── LEFT PANEL: FACTION LIST ───────────────────────────────────
 
-        private void BuildTitleBanner(RectTransform parent)
+        private void BuildFactionList(RectTransform parent)
         {
-            // Banner background
-            RectTransform banner = UIFactory.CreatePanel(parent, "TitleBanner", new Color(0.05f, 0.025f, 0.02f, 0.98f));
-            banner.anchorMin = new Vector2(0, 0.925f);
-            banner.anchorMax = new Vector2(1, 1f);
-            banner.offsetMin = Vector2.zero;
-            banner.offsetMax = Vector2.zero;
+            // Container — compact, ~26% width of the clustered area
+            RectTransform listPanel = UIFactory.CreatePanel(parent, "FactionListPanel", new Color(0.03f, 0.025f, 0.02f, 0.8f));
+            listPanel.anchorMin = new Vector2(0.02f, 0.10f);
+            listPanel.anchorMax = new Vector2(0.28f, 0.92f);
+            listPanel.offsetMin = Vector2.zero;
+            listPanel.offsetMax = Vector2.zero;
 
-            // Gold borders (top + bottom)
-            RectTransform topLine = UIFactory.CreatePanel(banner, "TopLine", UIFactory.BorderGoldBright);
-            topLine.anchorMin = new Vector2(0, 0.94f); topLine.anchorMax = Vector2.one;
-            topLine.offsetMin = Vector2.zero; topLine.offsetMax = Vector2.zero;
-            topLine.GetComponent<Image>().raycastTarget = false;
-
-            RectTransform botLine = UIFactory.CreatePanel(banner, "BotLine", UIFactory.BorderGold);
-            botLine.anchorMin = Vector2.zero; botLine.anchorMax = new Vector2(1, 0.04f);
-            botLine.offsetMin = Vector2.zero; botLine.offsetMax = Vector2.zero;
-            botLine.GetComponent<Image>().raycastTarget = false;
-
-            // Decorative wings
-            Text leftWing = UIFactory.CreateText(banner, "LeftWing", "════════════ ✦ ", 14, TextAnchor.MiddleRight, UIFactory.BorderGold);
-            UIFactory.SetAnchors(leftWing.gameObject, new Vector2(0.03f, 0.1f), new Vector2(0.28f, 0.9f), Vector2.zero, Vector2.zero);
-
-            // Title
-            Text title = UIFactory.CreateText(banner, "Title", "CHOOSE YOUR NATION", 42, TextAnchor.MiddleCenter, UIFactory.GoldAccent);
-            title.fontStyle = FontStyle.Bold;
-            UIFactory.SetAnchors(title.gameObject, new Vector2(0.25f, 0.05f), new Vector2(0.75f, 0.95f), Vector2.zero, Vector2.zero);
-            Shadow titleShadow = title.gameObject.AddComponent<Shadow>();
-            titleShadow.effectColor = new Color(0, 0, 0, 0.9f);
-            titleShadow.effectDistance = new Vector2(3, -3);
-            Outline titleOutline = title.gameObject.AddComponent<Outline>();
-            titleOutline.effectColor = new Color(0, 0, 0, 0.5f);
-            titleOutline.effectDistance = new Vector2(1, 1);
-
-            Text rightWing = UIFactory.CreateText(banner, "RightWing", " ✦ ════════════", 14, TextAnchor.MiddleLeft, UIFactory.BorderGold);
-            UIFactory.SetAnchors(rightWing.gameObject, new Vector2(0.72f, 0.1f), new Vector2(0.97f, 0.9f), Vector2.zero, Vector2.zero);
-        }
-
-        // ─── FACTION CARDS ──────────────────────────────────────────────
-
-        private void BuildFactionCardsRow(RectTransform parent)
-        {
-            // Container for the scroll view
-            GameObject scrollViewGO = new GameObject("CardsScrollView");
-            scrollViewGO.transform.SetParent(parent, false);
-            RectTransform scrollRT = scrollViewGO.AddComponent<RectTransform>();
-            scrollRT.anchorMin = new Vector2(0.015f, 0.58f);
-            scrollRT.anchorMax = new Vector2(0.985f, 0.915f);
+            // Scroll area (no separate header — just scrollable list)
+            GameObject scrollGO = new GameObject("ListScroll");
+            scrollGO.transform.SetParent(listPanel, false);
+            RectTransform scrollRT = scrollGO.AddComponent<RectTransform>();
+            scrollRT.anchorMin = Vector2.zero;
+            scrollRT.anchorMax = Vector2.one;
             scrollRT.offsetMin = Vector2.zero;
             scrollRT.offsetMax = Vector2.zero;
 
-            ScrollRect scrollRect = scrollViewGO.AddComponent<ScrollRect>();
-            scrollRect.horizontal = true;
-            scrollRect.vertical = false;
-            scrollRect.movementType = ScrollRect.MovementType.Elastic;
-            scrollRect.inertia = true;
-            scrollRect.scrollSensitivity = 50f;
+            ScrollRect scrollRect = scrollGO.AddComponent<ScrollRect>();
+            scrollRect.horizontal = false;
+            scrollRect.vertical = true;
+            scrollRect.movementType = ScrollRect.MovementType.Clamped;
+            scrollRect.scrollSensitivity = 30f;
 
             // Viewport
             GameObject viewportGO = new GameObject("Viewport");
-            viewportGO.transform.SetParent(scrollViewGO.transform, false);
-            RectTransform viewportRT = viewportGO.AddComponent<RectTransform>();
-            viewportRT.anchorMin = Vector2.zero;
-            viewportRT.anchorMax = Vector2.one;
-            viewportRT.offsetMin = Vector2.zero;
-            viewportRT.offsetMax = Vector2.zero;
+            viewportGO.transform.SetParent(scrollGO.transform, false);
+            RectTransform vpRT = viewportGO.AddComponent<RectTransform>();
+            UIFactory.SetAnchors(vpRT, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
             viewportGO.AddComponent<RectMask2D>();
-            scrollRect.viewport = viewportRT;
+            scrollRect.viewport = vpRT;
 
-            // Content container
-            GameObject container = new GameObject("CardsContainer");
-            container.transform.SetParent(viewportRT, false);
-            RectTransform cRT = container.AddComponent<RectTransform>();
-            cRT.anchorMin = new Vector2(0, 0);
-            cRT.anchorMax = new Vector2(0, 1);
-            cRT.pivot = new Vector2(0, 0.5f);
-            cRT.offsetMin = Vector2.zero;
-            cRT.offsetMax = Vector2.zero;
+            // Content
+            GameObject contentGO = new GameObject("Content");
+            contentGO.transform.SetParent(viewportGO.transform, false);
+            RectTransform contentRT = contentGO.AddComponent<RectTransform>();
+            contentRT.anchorMin = new Vector2(0, 1);
+            contentRT.anchorMax = new Vector2(1, 1);
+            contentRT.pivot = new Vector2(0.5f, 1);
+            contentRT.offsetMin = Vector2.zero;
+            contentRT.offsetMax = Vector2.zero;
 
-            HorizontalLayoutGroup hlg = container.AddComponent<HorizontalLayoutGroup>();
-            hlg.childAlignment = TextAnchor.MiddleLeft;
-            hlg.childControlWidth = true;
-            hlg.childControlHeight = true;
-            hlg.childForceExpandWidth = false;
-            hlg.childForceExpandHeight = true;
-            hlg.spacing = 15f;
-            hlg.padding = new RectOffset(15, 15, 15, 15);
+            VerticalLayoutGroup vlg = contentGO.AddComponent<VerticalLayoutGroup>();
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = false;
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+            vlg.spacing = 1f;
+            vlg.padding = new RectOffset(4, 4, 4, 4);
 
-            ContentSizeFitter csf = container.AddComponent<ContentSizeFitter>();
-            csf.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
-            csf.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+            ContentSizeFitter csf = contentGO.AddComponent<ContentSizeFitter>();
+            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            scrollRect.content = cRT;
+            scrollRect.content = contentRT;
 
+            // Create entries
             for (int i = 0; i < 24; i++)
-            {
-                CreateFactionCard(container.transform, (FactionType)i, i);
-                LayoutElement le = factionCards[i].AddComponent<LayoutElement>();
-                le.preferredWidth = 160f;
-            }
+                CreateFactionListEntry(contentGO.transform, i);
         }
 
-        private void CreateFactionCard(Transform parent, FactionType faction, int index)
+        private void CreateFactionListEntry(Transform parent, int index)
         {
-            // === CARD ROOT ===
-            GameObject cardGO = new GameObject($"Card_{faction}");
-            cardGO.transform.SetParent(parent, false);
-            RectTransform cardRT = cardGO.AddComponent<RectTransform>();
+            float entryHeight = 40f;
 
-            Image cardBg = cardGO.AddComponent<Image>();
-            cardBg.color = new Color(0.06f, 0.04f, 0.035f, 0.97f);
+            GameObject entryGO = new GameObject($"Entry_{(FactionType)index}");
+            entryGO.transform.SetParent(parent, false);
+            RectTransform entryRT = entryGO.AddComponent<RectTransform>();
+            entryRT.sizeDelta = new Vector2(0, entryHeight);
 
-            Outline cardOutline = cardGO.AddComponent<Outline>();
-            cardOutline.effectColor = new Color(UIFactory.BorderGold.r, UIFactory.BorderGold.g, UIFactory.BorderGold.b, 0.25f);
-            cardOutline.effectDistance = new Vector2(1.5f, 1.5f);
+            // Background
+            Image entryBg = entryGO.AddComponent<Image>();
+            entryBg.color = new Color(0.055f, 0.05f, 0.04f, 0.7f);
+            listBgs[index] = entryBg;
 
-            factionCards[index] = cardGO;
+            // Layout element
+            LayoutElement le = entryGO.AddComponent<LayoutElement>();
+            le.preferredHeight = entryHeight;
 
-            // === FACTION COLOR ACCENT BAR (top, thick) ===
-            RectTransform accentTop = UIFactory.CreatePanel(cardRT, "AccentTop", FactionColors[index]);
-            accentTop.anchorMin = new Vector2(0, 0.94f); accentTop.anchorMax = Vector2.one;
-            accentTop.offsetMin = Vector2.zero; accentTop.offsetMax = Vector2.zero;
-            accentTop.GetComponent<Image>().raycastTarget = false;
+            // Selection Outline Indicator (Mockup has a gold box around selected item, not just a left bar)
+            GameObject outlineGO = new GameObject("SelectIndicator");
+            outlineGO.transform.SetParent(entryRT, false);
+            RectTransform indRT = outlineGO.AddComponent<RectTransform>();
+            UIFactory.SetAnchors(indRT, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            Image indImg = outlineGO.AddComponent<Image>();
+            indImg.color = new Color(0, 0, 0, 0f); // We'll toggle alpha
+            indImg.raycastTarget = false;
+            Outline selOut = outlineGO.AddComponent<Outline>();
+            selOut.effectColor = new Color(0.85f, 0.65f, 0.25f, 0f); // Toggled in script later
+            selOut.effectDistance = new Vector2(2, -2);
+            listSelectIndicators[index] = indImg; // Using this array to hold the object we get Outline from
 
-            // === SELECTION GLOW (initially invisible) ===
-            GameObject glowGO = new GameObject("Glow");
-            glowGO.transform.SetParent(cardRT, false);
-            RectTransform glowRT = glowGO.AddComponent<RectTransform>();
-            glowRT.anchorMin = Vector2.zero;
-            glowRT.anchorMax = Vector2.one;
-            glowRT.offsetMin = new Vector2(-4, -4);
-            glowRT.offsetMax = new Vector2(4, 4);
-            Image glowImg = glowGO.AddComponent<Image>();
-            Color gc = FactionColors[index];
-            glowImg.color = new Color(gc.r, gc.g, gc.b, 0f);
-            glowImg.raycastTarget = false;
-            cardGlows[index] = glowImg;
+            // Small flag thumbnail (compact rectangle)
+            GameObject flagGO = new GameObject("FlagThumb");
+            flagGO.transform.SetParent(entryRT, false);
+            RectTransform flagRT = flagGO.AddComponent<RectTransform>();
+            flagRT.anchorMin = new Vector2(0.05f, 0.12f);
+            flagRT.anchorMax = new Vector2(0.25f, 0.88f);
+            flagRT.offsetMin = Vector2.zero;
+            flagRT.offsetMax = Vector2.zero;
 
-            // === INNER FLAG FRAME ===
-            RectTransform flagFrame = UIFactory.CreatePanel(cardRT, "FlagFrame", new Color(UIFactory.BorderGold.r, UIFactory.BorderGold.g, UIFactory.BorderGold.b, 0.5f));
-            flagFrame.anchorMin = new Vector2(0.06f, 0.28f);
-            flagFrame.anchorMax = new Vector2(0.94f, 0.92f);
-            flagFrame.offsetMin = Vector2.zero;
-            flagFrame.offsetMax = Vector2.zero;
+            Image flagBorImg = flagGO.AddComponent<Image>();
+            flagBorImg.color = new Color(0.85f, 0.65f, 0.25f, 1f); // Always gold border like the mockup
 
-            // Flag inner bg
-            RectTransform flagInner = UIFactory.CreatePanel(flagFrame, "FlagInner", new Color(0.04f, 0.03f, 0.025f, 1f));
-            flagInner.anchorMin = Vector2.zero; flagInner.anchorMax = Vector2.one;
-            flagInner.offsetMin = new Vector2(2, 2); flagInner.offsetMax = new Vector2(-2, -2);
-
-            // Flag image
-            GameObject flagGO = new GameObject("FlagImg");
-            flagGO.transform.SetParent(flagInner, false);
-            RectTransform flagImgRT = flagGO.AddComponent<RectTransform>();
-            flagImgRT.anchorMin = new Vector2(0.03f, 0.03f);
-            flagImgRT.anchorMax = new Vector2(0.97f, 0.97f);
-            flagImgRT.offsetMin = Vector2.zero;
-            flagImgRT.offsetMax = Vector2.zero;
-
-            Image flagImg = flagGO.AddComponent<Image>();
-            flagImg.preserveAspect = true;
+            GameObject flagInnerGO = new GameObject("FlagImg");
+            flagInnerGO.transform.SetParent(flagGO.transform, false);
+            UIFactory.SetAnchors(flagInnerGO, new Vector2(0.06f, 0.06f), new Vector2(0.94f, 0.94f), Vector2.zero, Vector2.zero);
+            Image flagImg = flagInnerGO.AddComponent<Image>();
+            flagImg.preserveAspect = false;
             flagImg.raycastTarget = false;
             if (flagSprites[index] != null)
                 flagImg.sprite = flagSprites[index];
             else
-                flagImg.color = FactionColors[index] * 0.5f;
-            cardFlags[index] = flagImg;
+                flagImg.color = FactionAccentColors[index] * 0.5f;
+            listFlags[index] = flagImg;
 
-            // === FACTION NAME ===
-            Text nameText = UIFactory.CreateText(cardRT, "Name", FactionShortNames[index],
-                14, TextAnchor.MiddleCenter, UIFactory.GoldAccent);
-            nameText.fontStyle = FontStyle.Bold;
+            // Faction name
+            Text nameText = UIFactory.CreateText(entryRT, "Name", FactionShortNames[index],
+                14, TextAnchor.MiddleLeft, new Color(0.55f, 0.55f, 0.5f));
+            UIFactory.SetAnchors(nameText.gameObject, new Vector2(0.28f, 0.05f), new Vector2(0.82f, 0.95f), Vector2.zero, Vector2.zero);
             nameText.resizeTextForBestFit = true;
             nameText.resizeTextMinSize = 10;
             nameText.resizeTextMaxSize = 16;
-            UIFactory.SetAnchors(nameText.gameObject, new Vector2(0.02f, 0.13f), new Vector2(0.98f, 0.27f), Vector2.zero, Vector2.zero);
-            Shadow ns = nameText.gameObject.AddComponent<Shadow>();
-            ns.effectColor = new Color(0, 0, 0, 0.8f);
-            ns.effectDistance = new Vector2(1, -1);
-            cardNames[index] = nameText;
+            listNames[index] = nameText;
 
-            // === DIFFICULTY DOTS ===
+            // Difficulty dots (small, right side)
             int diff = FactionDifficulty[index];
             string dots = "";
-            for (int d = 0; d < 5; d++)
-                dots += d < diff ? "★" : "☆";
+            for (int d = 0; d < diff; d++) dots += "★";
+            Text diffText = UIFactory.CreateText(entryRT, "Diff", dots, 7, TextAnchor.MiddleRight, GetDifficultyColor(diff));
+            UIFactory.SetAnchors(diffText.gameObject, new Vector2(0.83f, 0.15f), new Vector2(0.97f, 0.85f), Vector2.zero, Vector2.zero);
 
-            Text diffText = UIFactory.CreateText(cardRT, "Diff", dots, 7, TextAnchor.MiddleCenter, GetDifficultyColor(diff));
-            UIFactory.SetAnchors(diffText.gameObject, new Vector2(0.05f, 0.02f), new Vector2(0.95f, 0.13f), Vector2.zero, Vector2.zero);
-
-            // === CHECKMARK ===
-            GameObject checkGO = new GameObject("Checkmark");
-            checkGO.transform.SetParent(cardRT, false);
-            Text checkTxt = checkGO.AddComponent<Text>();
-            checkTxt.text = "✓";
-            checkTxt.fontSize = 20;
-            checkTxt.color = new Color(0.3f, 1f, 0.3f);
-            checkTxt.alignment = TextAnchor.MiddleCenter;
-            checkTxt.fontStyle = FontStyle.Bold;
-            checkTxt.font = Font.CreateDynamicFontFromOSFont("Arial", 22);
-            UIFactory.SetAnchors(checkGO, new Vector2(0.75f, 0.88f), new Vector2(1f, 1.05f), Vector2.zero, Vector2.zero);
-            checkGO.SetActive(false);
-            cardCheckmarks[index] = checkGO;
-
-            // === BUTTON + HOVER ===
-            Button btn = cardGO.AddComponent<Button>();
-            btn.targetGraphic = cardBg;
+            // Button + Hover
+            Button btn = entryGO.AddComponent<Button>();
+            btn.targetGraphic = entryBg;
             ColorBlock cb = btn.colors;
             cb.normalColor = Color.white;
-            cb.highlightedColor = new Color(1.6f, 1.5f, 1.3f);
-            cb.pressedColor = new Color(0.7f, 0.6f, 0.5f);
-            cb.fadeDuration = 0.1f;
+            cb.highlightedColor = new Color(1.4f, 1.3f, 1.15f);
+            cb.pressedColor = new Color(0.8f, 0.7f, 0.5f);
+            cb.fadeDuration = 0.08f;
             btn.colors = cb;
 
             int capturedIndex = index;
             btn.onClick.AddListener(() => { PlaySelectSound(); SelectFaction((FactionType)capturedIndex); });
 
             // Hover events
-            EventTrigger trigger = cardGO.AddComponent<EventTrigger>();
+            EventTrigger trigger = entryGO.AddComponent<EventTrigger>();
 
             EventTrigger.Entry enterEntry = new EventTrigger.Entry();
             enterEntry.eventID = EventTriggerType.PointerEnter;
@@ -552,10 +463,7 @@ namespace NapoleonicWars.UI
             {
                 PlayHoverSound();
                 if ((int)selectedFaction != capturedIndex)
-                {
-                    cardOutline.effectColor = new Color(1f, 0.85f, 0.4f, 0.7f);
-                    cardBg.color = new Color(0.09f, 0.06f, 0.05f, 0.98f);
-                }
+                    entryBg.color = new Color(0.08f, 0.07f, 0.05f, 0.85f);
             });
             trigger.triggers.Add(enterEntry);
 
@@ -564,153 +472,172 @@ namespace NapoleonicWars.UI
             exitEntry.callback.AddListener((data) =>
             {
                 if ((int)selectedFaction != capturedIndex)
-                {
-                    cardOutline.effectColor = new Color(UIFactory.BorderGold.r, UIFactory.BorderGold.g, UIFactory.BorderGold.b, 0.25f);
-                    cardBg.color = new Color(0.06f, 0.04f, 0.035f, 0.97f);
-                }
+                    entryBg.color = new Color(0.055f, 0.05f, 0.04f, 0.7f);
             });
             trigger.triggers.Add(exitEntry);
+
+            listEntries[index] = entryGO;
         }
 
-        // ─── DETAIL PANEL ───────────────────────────────────────────────
+        // ─── CENTER: LARGE FLAG DISPLAY ─────────────────────────────────
 
-        private void BuildDetailPanel(RectTransform parent)
+        private Text detailFactionNameOnFlag; // Name below the flag frame
+
+        private void BuildFlagDisplay(RectTransform parent)
         {
-            RectTransform outerPanel = UIFactory.CreateOrnatePanel(parent, "DetailPanel",
-                new Color(0.05f, 0.035f, 0.025f, 0.97f));
-            outerPanel.anchorMin = new Vector2(0.015f, 0.10f);
-            outerPanel.anchorMax = new Vector2(0.985f, 0.565f);
-            outerPanel.offsetMin = Vector2.zero;
-            outerPanel.offsetMax = Vector2.zero;
+            // Center area - takes up a massive portion of the center
+            RectTransform flagArea = UIFactory.CreatePanel(parent, "FlagArea", Color.clear);
+            flagArea.anchorMin = new Vector2(0.32f, 0.0f);
+            flagArea.anchorMax = new Vector2(0.66f, 1.0f);
+            flagArea.offsetMin = Vector2.zero;
+            flagArea.offsetMax = Vector2.zero;
 
-            Transform inner = outerPanel.Find("Inner");
+            // Ornate gold outer frame
+            RectTransform outerFrame = UIFactory.CreatePanel(flagArea, "OuterFrame", UIFactory.BorderGold);
+            outerFrame.anchorMin = new Vector2(0.05f, 0.05f);
+            outerFrame.anchorMax = new Vector2(0.95f, 0.95f);
+            outerFrame.offsetMin = Vector2.zero;
+            outerFrame.offsetMax = Vector2.zero;
 
-            // ── LEFT: FLAG ──
-            GameObject leftCol = new GameObject("LeftCol");
-            leftCol.transform.SetParent(inner, false);
-            UIFactory.SetAnchors(leftCol, new Vector2(0.01f, 0.03f), new Vector2(0.24f, 0.97f), Vector2.zero, Vector2.zero);
+            // Dark inset frame
+            RectTransform darkFrame = UIFactory.CreatePanel(outerFrame, "DarkFrame", new Color(0.02f, 0.02f, 0.02f, 1f));
+            UIFactory.SetAnchors(darkFrame, Vector2.zero, Vector2.one, new Vector2(6, 6), new Vector2(-6, -6));
 
-            // Flag with ornate gold border
-            RectTransform flagBorder = UIFactory.CreatePanel(leftCol.transform, "FlagBorder", UIFactory.BorderGold);
-            flagBorder.anchorMin = new Vector2(0.04f, 0.06f);
-            flagBorder.anchorMax = new Vector2(0.96f, 0.94f);
-            flagBorder.offsetMin = Vector2.zero;
-            flagBorder.offsetMax = Vector2.zero;
+            // Inner gold frame
+            RectTransform innerFrame = UIFactory.CreatePanel(darkFrame, "InnerFrame",
+                new Color(UIFactory.BorderGold.r * 0.7f, UIFactory.BorderGold.g * 0.7f, UIFactory.BorderGold.b * 0.7f, 1f));
+            UIFactory.SetAnchors(innerFrame, Vector2.zero, Vector2.one, new Vector2(4, 4), new Vector2(-4, -4));
 
-            // Inner dark frame
-            RectTransform flagDark = UIFactory.CreatePanel(flagBorder, "FlagDark", new Color(0.03f, 0.02f, 0.015f, 1f));
-            flagDark.anchorMin = Vector2.zero; flagDark.anchorMax = Vector2.one;
-            flagDark.offsetMin = new Vector2(3, 3); flagDark.offsetMax = new Vector2(-3, -3);
+            // Flag surface
+            RectTransform flagSurface = UIFactory.CreatePanel(innerFrame, "FlagSurface", new Color(0.01f, 0.01f, 0.01f, 1f));
+            UIFactory.SetAnchors(flagSurface, Vector2.zero, Vector2.one, new Vector2(2, 2), new Vector2(-2, -2));
 
             // Flag image
-            GameObject flagGO = new GameObject("FlagImage");
-            flagGO.transform.SetParent(flagDark, false);
-            UIFactory.SetAnchors(flagGO, new Vector2(0.02f, 0.02f), new Vector2(0.98f, 0.98f), Vector2.zero, Vector2.zero);
-            detailFlagImage = flagGO.AddComponent<Image>();
-            detailFlagImage.preserveAspect = true;
+            GameObject flagImgGO = new GameObject("FlagImage");
+            flagImgGO.transform.SetParent(flagSurface, false);
+            UIFactory.SetAnchors(flagImgGO, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            detailFlagImage = flagImgGO.AddComponent<Image>();
+            detailFlagImage.preserveAspect = false;
 
-            // ── CENTER: TEXT INFO ──
-            GameObject centerCol = new GameObject("CenterCol");
-            centerCol.transform.SetParent(inner, false);
-            UIFactory.SetAnchors(centerCol, new Vector2(0.26f, 0.03f), new Vector2(0.64f, 0.97f), Vector2.zero, Vector2.zero);
+            // Corner ornaments (Pale yellow drafting tape style)
+            CreateCornerOrnament(outerFrame, new Vector2(0, 0), new Vector2(0.03f, 0.025f));
+            CreateCornerOrnament(outerFrame, new Vector2(0.97f, 0), new Vector2(1f, 0.025f));
+            CreateCornerOrnament(outerFrame, new Vector2(0, 0.975f), new Vector2(0.03f, 1f));
+            CreateCornerOrnament(outerFrame, new Vector2(0.97f, 0.975f), new Vector2(1f, 1f));
 
-            // Faction accent bar (top)
-            detailAccentBar = UIFactory.CreatePanel(centerCol.transform, "AccentTop", FactionColors[0]).GetComponent<Image>();
-            UIFactory.SetAnchors(detailAccentBar.gameObject, new Vector2(0, 0.94f), new Vector2(1, 1f), Vector2.zero, Vector2.zero);
-            detailAccentBar.raycastTarget = false;
+            // Faction name INSIDE the flag bottom, exactly like the mockup
+            detailFactionNameOnFlag = UIFactory.CreateText(flagSurface, "FlagFactionName",
+                "FRANCE", 36, TextAnchor.MiddleCenter, new Color(0.85f, 0.75f, 0.45f));
+            detailFactionNameOnFlag.fontStyle = FontStyle.Normal; // Mockup non-bold serif style
+            UIFactory.SetAnchors(detailFactionNameOnFlag.gameObject, new Vector2(0.0f, 0.05f), new Vector2(1.0f, 0.18f), Vector2.zero, Vector2.zero);
+            Shadow fns = detailFactionNameOnFlag.gameObject.AddComponent<Shadow>();
+            fns.effectColor = new Color(0, 0, 0, 0.9f);
+            fns.effectDistance = new Vector2(3, -3);
+        }
 
-            // Faction name
-            detailFactionName = UIFactory.CreateText(centerCol.transform, "FactionName",
-                FactionNames[0], 36, TextAnchor.MiddleLeft, UIFactory.GoldAccent);
-            detailFactionName.fontStyle = FontStyle.Bold;
-            UIFactory.SetAnchors(detailFactionName.gameObject, new Vector2(0.02f, 0.82f), new Vector2(0.98f, 0.94f), Vector2.zero, Vector2.zero);
-            Shadow fnSh = detailFactionName.gameObject.AddComponent<Shadow>();
-            fnSh.effectColor = new Color(0, 0, 0, 0.8f);
-            fnSh.effectDistance = new Vector2(2, -2);
+        private void CreateCornerOrnament(RectTransform parent, Vector2 anchorMin, Vector2 anchorMax)
+        {
+            RectTransform orn = UIFactory.CreatePanel(parent, "Corner", new Color(0.96f, 0.89f, 0.65f, 1f));
+            orn.anchorMin = anchorMin;
+            orn.anchorMax = anchorMax;
+            orn.offsetMin = Vector2.zero;
+            orn.offsetMax = Vector2.zero;
+            orn.GetComponent<Image>().raycastTarget = false;
+        }
 
-            // Motto
-            detailMotto = UIFactory.CreateText(centerCol.transform, "Motto",
-                FactionMottos[0], 18, TextAnchor.MiddleLeft, new Color(0.72f, 0.62f, 0.42f));
+        // ─── RIGHT: INFO + STATS ────────────────────────────────────────
+
+        private void BuildInfoPanel(RectTransform parent)
+        {
+            // Right column — faction info and stats (matches mockup exactly)
+            RectTransform infoArea = UIFactory.CreatePanel(parent, "InfoArea", Color.clear);
+            infoArea.anchorMin = new Vector2(0.70f, 0.0f);
+            infoArea.anchorMax = new Vector2(1.00f, 1.0f);
+            infoArea.offsetMin = Vector2.zero;
+            infoArea.offsetMax = Vector2.zero;
+
+            // ── FACTION NAME (large, top) ──
+            detailFactionName = UIFactory.CreateText(infoArea, "FactionName",
+                FactionNames[0], 42, TextAnchor.UpperLeft, new Color(0.85f, 0.75f, 0.45f));
+            detailFactionName.fontStyle = FontStyle.Normal;
+            UIFactory.SetAnchors(detailFactionName.gameObject, new Vector2(0.0f, 0.88f), new Vector2(1.0f, 1.0f), Vector2.zero, Vector2.zero);
+            Shadow fnShad = detailFactionName.gameObject.AddComponent<Shadow>();
+            fnShad.effectColor = new Color(0, 0, 0, 0.9f);
+            fnShad.effectDistance = new Vector2(2, -2);
+
+            // ── MOTTO (italic, small) ──
+            detailMotto = UIFactory.CreateText(infoArea, "Motto",
+                FactionMottos[0], 16, TextAnchor.UpperLeft, new Color(0.6f, 0.6f, 0.6f));
             detailMotto.fontStyle = FontStyle.Italic;
-            UIFactory.SetAnchors(detailMotto.gameObject, new Vector2(0.02f, 0.73f), new Vector2(0.98f, 0.82f), Vector2.zero, Vector2.zero);
+            UIFactory.SetAnchors(detailMotto.gameObject, new Vector2(0.0f, 0.79f), new Vector2(1.0f, 0.86f), Vector2.zero, Vector2.zero);
 
-            // Gold separator
-            RectTransform sep = UIFactory.CreatePanel(centerCol.transform, "Sep", UIFactory.BorderGold);
-            sep.anchorMin = new Vector2(0.02f, 0.715f);
-            sep.anchorMax = new Vector2(0.5f, 0.72f);
-            sep.offsetMin = Vector2.zero; sep.offsetMax = Vector2.zero;
-            sep.GetComponent<Image>().raycastTarget = false;
+            // ── DESCRIPTION (large block, main content) ──
+            detailDescription = UIFactory.CreateText(infoArea, "Description",
+                "Led by", 12, TextAnchor.UpperLeft, new Color(0.8f, 0.8f, 0.8f));
+            UIFactory.SetAnchors(detailDescription.gameObject, new Vector2(0.0f, 0.65f), new Vector2(1.0f, 0.78f), Vector2.zero, Vector2.zero);
 
-            // Description
-            detailDescription = UIFactory.CreateText(centerCol.transform, "Description",
-                FactionDescriptions[0], 18, TextAnchor.UpperLeft, UIFactory.ParchmentBeige);
-            UIFactory.SetAnchors(detailDescription.gameObject, new Vector2(0.02f, 0.08f), new Vector2(0.98f, 0.71f), Vector2.zero, Vector2.zero);
+            // Hidden elements we still need references to (not shown in mockup)
+            detailCapital = UIFactory.CreateText(infoArea, "Capital", "", 1, TextAnchor.UpperLeft, Color.clear);
+            UIFactory.SetAnchors(detailCapital.gameObject, Vector2.zero, Vector2.zero, Vector2.zero, Vector2.zero);
+            difficultyLabel = UIFactory.CreateText(infoArea, "Difficulty", "", 1, TextAnchor.UpperLeft, Color.clear);
+            UIFactory.SetAnchors(difficultyLabel.gameObject, Vector2.zero, Vector2.zero, Vector2.zero, Vector2.zero);
 
-            // Accent bar bottom
-            detailAccentBarBot = UIFactory.CreatePanel(centerCol.transform, "AccentBot", FactionColors[0]).GetComponent<Image>();
-            UIFactory.SetAnchors(detailAccentBarBot.gameObject, new Vector2(0, 0), new Vector2(1, 0.03f), Vector2.zero, Vector2.zero);
-            detailAccentBarBot.raycastTarget = false;
+            // ── STATS SECTION (4 bars like mockup: Army, Navy, Economy, Population) ──
+            // Note: The mockup has no "NATIONAL STRENGTHS" header, just the bars
+            Text statsH = UIFactory.CreateText(infoArea, "StatsH", "", 1, TextAnchor.MiddleCenter, Color.clear);
+            UIFactory.SetAnchors(statsH.gameObject, Vector2.zero, Vector2.zero, Vector2.zero, Vector2.zero);
 
-            // ── RIGHT: STATS ──
-            GameObject rightCol = new GameObject("RightCol");
-            rightCol.transform.SetParent(inner, false);
-            UIFactory.SetAnchors(rightCol, new Vector2(0.655f, 0.03f), new Vector2(0.99f, 0.97f), Vector2.zero, Vector2.zero);
+            // Only show 4 stats like the mockup
+            int[] displayedStats = { 0, 1, 2, 3 }; // Army, Navy, Economy, Population
+            float barTop = 0.40f;
+            float barH = 0.055f;
+            float gap = 0.025f;
 
-            // Stats panel background
-            RectTransform statsBg = UIFactory.CreatePanel(rightCol.transform, "StatsBg",
-                new Color(0.04f, 0.03f, 0.025f, 0.85f));
-            statsBg.anchorMin = Vector2.zero; statsBg.anchorMax = Vector2.one;
-            statsBg.offsetMin = Vector2.zero; statsBg.offsetMax = Vector2.zero;
-            Outline statsOut = statsBg.gameObject.AddComponent<Outline>();
-            statsOut.effectColor = new Color(UIFactory.BorderGold.r, UIFactory.BorderGold.g, UIFactory.BorderGold.b, 0.3f);
-            statsOut.effectDistance = new Vector2(1, 1);
-
-            // Stats header
-            Text statsHeader = UIFactory.CreateText(statsBg, "StatsHeader", "── STATISTICS ──", 18, TextAnchor.MiddleCenter, UIFactory.BorderGoldBright);
-            statsHeader.fontStyle = FontStyle.Bold;
-            UIFactory.SetAnchors(statsHeader.gameObject, new Vector2(0.02f, 0.90f), new Vector2(0.98f, 1f), Vector2.zero, Vector2.zero);
-
-            // Difficulty row
-            difficultyLabel = UIFactory.CreateText(statsBg, "DiffLabel", "Difficulty: ★★☆☆☆", 16, TextAnchor.MiddleCenter, UIFactory.TextGrey);
-            UIFactory.SetAnchors(difficultyLabel.gameObject, new Vector2(0.02f, 0.81f), new Vector2(0.98f, 0.90f), Vector2.zero, Vector2.zero);
-
-            // Capital
-            Text capitalLabel = UIFactory.CreateText(statsBg, "Capital", "⚜ Capital: Paris", 16, TextAnchor.MiddleLeft, new Color(0.80f, 0.70f, 0.50f));
-            UIFactory.SetAnchors(capitalLabel.gameObject, new Vector2(0.06f, 0.72f), new Vector2(0.94f, 0.81f), Vector2.zero, Vector2.zero);
-            detailStats = capitalLabel; // Reuse for capital display
-
-            // 6 stat bars
-            float barStartY = 0.68f;
-            float barHeight = 0.085f;
-            float barGap = 0.015f;
-            for (int i = 0; i < 6; i++)
+            for (int si = 0; si < displayedStats.Length; si++)
             {
-                float y0 = barStartY - (i + 1) * (barHeight + barGap);
-                float y1 = y0 + barHeight;
+                int i = displayedStats[si];
+                float y1 = barTop - si * (barH + gap);
+                float y0 = y1 - barH;
 
-                // Label
-                Text label = UIFactory.CreateText(statsBg, $"Stat{i}Label", StatNames[i], 14, TextAnchor.MiddleLeft, UIFactory.TextGrey);
-                UIFactory.SetAnchors(label.gameObject, new Vector2(0.06f, y0), new Vector2(0.35f, y1), Vector2.zero, Vector2.zero);
+                // Stat label (ARMY, NAVY, etc.)
+                Text label = UIFactory.CreateText(infoArea, $"StatLabel{i}",
+                    StatNames[i].ToUpper(), 13, TextAnchor.MiddleLeft, UIFactory.SilverText);
+                label.fontStyle = FontStyle.Bold;
+                UIFactory.SetAnchors(label.gameObject, new Vector2(0.04f, y0), new Vector2(0.24f, y1), Vector2.zero, Vector2.zero);
                 statBarLabels[i] = label;
 
                 // Bar background
-                RectTransform barBg = UIFactory.CreatePanel(statsBg, $"StatBar{i}Bg", new Color(0.12f, 0.13f, 0.11f, 0.9f));
-                barBg.anchorMin = new Vector2(0.37f, y0 + 0.01f);
-                barBg.anchorMax = new Vector2(0.92f, y1 - 0.01f);
-                barBg.offsetMin = Vector2.zero; barBg.offsetMax = Vector2.zero;
+                RectTransform barBg = UIFactory.CreatePanel(infoArea, $"BarBg{i}",
+                    new Color(0.1f, 0.08f, 0.07f, 1f));
+                barBg.anchorMin = new Vector2(0.26f, y0 + 0.01f);
+                barBg.anchorMax = new Vector2(0.97f, y1 - 0.01f);
+                barBg.offsetMin = Vector2.zero;
+                barBg.offsetMax = Vector2.zero;
 
                 // Bar fill
-                GameObject fillGO = new GameObject($"StatBar{i}Fill");
+                GameObject fillGO = new GameObject($"BarFill{i}");
                 fillGO.transform.SetParent(barBg, false);
                 RectTransform fillRT = fillGO.AddComponent<RectTransform>();
                 fillRT.anchorMin = Vector2.zero;
                 fillRT.anchorMax = new Vector2(0.8f, 1f);
-                fillRT.offsetMin = new Vector2(1, 1);
-                fillRT.offsetMax = new Vector2(-1, -1);
+                fillRT.offsetMin = Vector2.zero;
+                fillRT.offsetMax = Vector2.zero;
                 Image fillImg = fillGO.AddComponent<Image>();
                 fillImg.color = StatColors[i];
                 fillImg.raycastTarget = false;
                 statBarFills[i] = fillImg;
+            }
+
+            // Create hidden fills for stats 4 & 5 (Forts, Diplomacy) so arrays don't break
+            for (int i = 4; i < 6; i++)
+            {
+                statBarLabels[i] = detailCapital; // dummy reference
+                GameObject dummyFill = new GameObject($"DummyFill{i}");
+                dummyFill.transform.SetParent(infoArea, false);
+                Image dImg = dummyFill.AddComponent<Image>();
+                dImg.color = Color.clear;
+                dImg.raycastTarget = false;
+                statBarFills[i] = dImg;
             }
         }
 
@@ -718,67 +645,73 @@ namespace NapoleonicWars.UI
 
         private void BuildActionBar(RectTransform parent)
         {
-            // Start Campaign button
-            startCampaignBtn = UIFactory.CreateWarhammerButton(parent, "BtnStartCampaign",
-                "▶  START CAMPAIGN", 26, OnStartCampaign);
-            UIFactory.SetAnchors(startCampaignBtn.gameObject,
-                new Vector2(0.28f, 0.015f), new Vector2(0.72f, 0.085f), Vector2.zero, Vector2.zero);
-            startBtnLabel = startCampaignBtn.GetComponentInChildren<Text>();
+            // Bottom bar background
+            RectTransform barBg = UIFactory.CreatePanel(parent, "ActionBar", new Color(0.035f, 0.025f, 0.02f, 0.98f));
+            barBg.anchorMin = new Vector2(0, 0);
+            barBg.anchorMax = new Vector2(1, 0.085f);
+            barBg.offsetMin = Vector2.zero;
+            barBg.offsetMax = Vector2.zero;
 
-            // Back button
-            Button backBtn = UIFactory.CreateGoldButton(parent, "BtnBack", "← Back to Menu", 14, () =>
+            // Top gold line
+            RectTransform topLine = UIFactory.CreatePanel(barBg, "TopLine", UIFactory.BorderGold);
+            topLine.anchorMin = new Vector2(0, 0.92f);
+            topLine.anchorMax = Vector2.one;
+            topLine.offsetMin = Vector2.zero;
+            topLine.offsetMax = Vector2.zero;
+            topLine.GetComponent<Image>().raycastTarget = false;
+
+            // START CAMPAIGN button (center, prominent, red/crimson in mockup)
+            startCampaignBtn = UIFactory.CreateWarhammerButton(barBg, "BtnStart",
+                "START CAMPAIGN", 24, OnStartCampaign);
+            UIFactory.SetAnchors(startCampaignBtn.gameObject,
+                new Vector2(0.40f, 0.15f), new Vector2(0.60f, 0.85f), Vector2.zero, Vector2.zero);
+            
+            // Note: The mockup has no "BACK" button visible, but we need one for UX.
+            // We'll keep it small on the left.
+            Button backBtn = UIFactory.CreateButton(barBg, "BtnBack", "← BACK", 13, () =>
             {
                 PlaySelectSound();
                 LoadingScreenUI.LoadSceneWithScreen("MainMenu");
             });
             UIFactory.SetAnchors(backBtn.gameObject,
-                new Vector2(0.015f, 0.02f), new Vector2(0.13f, 0.075f), Vector2.zero, Vector2.zero);
+                new Vector2(0.01f, 0.15f), new Vector2(0.12f, 0.85f), Vector2.zero, Vector2.zero);
         }
 
         // ─── SELECTION LOGIC ────────────────────────────────────────────
 
         private void SelectFaction(FactionType faction)
         {
-            previousSelection = (int)selectedFaction;
             selectedFaction = faction;
             int idx = (int)faction;
-
             PlayerPrefs.SetInt("SelectedFaction", idx);
             PlayerPrefs.Save();
 
-            // Update card visuals
+            // Update list visuals
             for (int i = 0; i < 24; i++)
             {
-                bool isSelected = (i == idx);
-                cardCheckmarks[i].SetActive(isSelected);
+                bool sel = (i == idx);
 
-                Outline outline = factionCards[i].GetComponent<Outline>();
-                Image bg = factionCards[i].GetComponent<Image>();
-
-                if (isSelected)
+                if (sel)
                 {
-                    outline.effectColor = FactionColors[i];
-                    outline.effectDistance = new Vector2(3f, 3f);
-                    bg.color = new Color(0.10f, 0.07f, 0.05f, 0.99f);
-                    cardNames[i].color = Color.white;
-                    // Glow
-                    Color gc = FactionColors[i];
-                    cardGlows[i].color = new Color(gc.r, gc.g, gc.b, 0.25f);
+                    listBgs[i].color = new Color(0.15f, 0.10f, 0.05f, 0.9f);
+                    listNames[i].color = new Color(0.85f, 0.65f, 0.25f);
+                    listNames[i].fontStyle = FontStyle.Bold;
+                    
+                    Outline olIndicator = listSelectIndicators[i].GetComponent<Outline>();
+                    if (olIndicator != null) olIndicator.effectColor = new Color(0.85f, 0.65f, 0.25f, 1f);
                 }
                 else
                 {
-                    outline.effectColor = new Color(UIFactory.BorderGold.r, UIFactory.BorderGold.g, UIFactory.BorderGold.b, 0.25f);
-                    outline.effectDistance = new Vector2(1.5f, 1.5f);
-                    bg.color = new Color(0.06f, 0.04f, 0.035f, 0.97f);
-                    cardNames[i].color = UIFactory.GoldAccent;
-                    cardGlows[i].color = new Color(0, 0, 0, 0);
+                    listBgs[i].color = new Color(0f, 0f, 0f, 0f);
+                    listNames[i].color = new Color(0.55f, 0.55f, 0.5f);
+                    listNames[i].fontStyle = FontStyle.Normal;
+
+                    Outline olIndicator = listSelectIndicators[i].GetComponent<Outline>();
+                    if (olIndicator != null) olIndicator.effectColor = new Color(0, 0, 0, 0f);
                 }
             }
 
-            // Update detail panel
             UpdateDetailPanel(idx);
-
-
             Debug.Log($"[FactionSelection] Selected: {faction}");
         }
 
@@ -793,17 +726,14 @@ namespace NapoleonicWars.UI
             else
             {
                 detailFlagImage.sprite = null;
-                detailFlagImage.color = FactionColors[idx] * 0.5f;
+                detailFlagImage.color = FactionAccentColors[idx] * 0.5f;
             }
 
-            // Text
             detailFactionName.text = FactionNames[idx];
+            if (detailFactionNameOnFlag != null)
+                detailFactionNameOnFlag.text = FactionShortNames[idx].ToUpper();
             detailMotto.text = FactionMottos[idx];
-            detailAccentBar.color = FactionColors[idx];
-            detailAccentBarBot.color = FactionColors[idx];
-
-            // Capital
-            detailStats.text = $"⚜ Capital: {FactionCapitals[idx]}";
+            detailCapital.text = $"⚜ Capital: {FactionCapitals[idx]}";
 
             // Difficulty
             int diff = FactionDifficulty[idx];
@@ -813,21 +743,21 @@ namespace NapoleonicWars.UI
             difficultyLabel.text = $"Difficulty: {stars}";
             difficultyLabel.color = GetDifficultyColor(diff);
 
-            // Stat bars — animate fill width
-            for (int i = 0; i < 6; i++)
+            // Stat bars (only 4 displayed: Army, Navy, Economy, Population)
+            for (int i = 0; i < 4; i++)
             {
-                float val = FactionStatValues[idx, i] / 10f;
+                int val = FactionStatValues[idx, i];
+                float norm = val / 10f;
                 RectTransform fillRT = statBarFills[i].GetComponent<RectTransform>();
-                fillRT.anchorMax = new Vector2(Mathf.Clamp01(val), 1f);
-                // Color intensity based on value
+                fillRT.anchorMax = new Vector2(Mathf.Clamp01(norm), 1f);
+
                 Color baseCol = StatColors[i];
-                statBarFills[i].color = val > 0.7f ? baseCol : new Color(baseCol.r * 0.7f, baseCol.g * 0.7f, baseCol.b * 0.7f, 0.85f);
+                statBarFills[i].color = norm > 0.7f ? baseCol :
+                    new Color(baseCol.r * 0.7f, baseCol.g * 0.7f, baseCol.b * 0.7f, 0.85f);
             }
 
-            // Typewriter description — must stop previous coroutine properly
-            if (typewriterCoroutine != null)
-                StopCoroutine(typewriterCoroutine);
-            typewriterCoroutine = StartCoroutine(TypewriterDescription(FactionDescriptions[idx]));
+            // Description is simplified entirely to "Led by" to match the mockup
+            detailDescription.text = "Led by";
         }
 
         private Color GetDifficultyColor(int difficulty)
@@ -839,43 +769,11 @@ namespace NapoleonicWars.UI
                 case 3: return new Color(0.85f, 0.85f, 0.3f);
                 case 4: return new Color(0.85f, 0.55f, 0.2f);
                 case 5: return new Color(0.85f, 0.25f, 0.2f);
-                default: return UIFactory.TextGrey;
+                default: return UIFactory.SilverText;
             }
         }
 
         // ─── ANIMATIONS ─────────────────────────────────────────────────
-
-        private IEnumerator AnimateSelectedCard()
-        {
-            while (true)
-            {
-                int idx = (int)selectedFaction;
-                if (idx >= 0 && idx < 24 && factionCards[idx] != null)
-                {
-                    Outline outline = factionCards[idx].GetComponent<Outline>();
-                    if (outline != null)
-                    {
-                        float t = 0;
-                        while (t < 1f)
-                        {
-                            t += Time.deltaTime * 1.8f;
-                            float pulse = 0.6f + Mathf.Sin(t * Mathf.PI * 2) * 0.4f;
-                            Color fc = FactionColors[idx];
-                            outline.effectColor = new Color(fc.r, fc.g, fc.b, pulse);
-
-                            // Pulse the glow too
-                            if (cardGlows[idx] != null)
-                            {
-                                float glowAlpha = 0.15f + Mathf.Sin(t * Mathf.PI * 2) * 0.12f;
-                                cardGlows[idx].color = new Color(fc.r, fc.g, fc.b, glowAlpha);
-                            }
-                            yield return null;
-                        }
-                    }
-                }
-                yield return new WaitForSeconds(0.05f);
-            }
-        }
 
         private IEnumerator PulseStartButton()
         {
@@ -890,7 +788,7 @@ namespace NapoleonicWars.UI
                 while (t < 1f)
                 {
                     t += Time.deltaTime * 1.2f;
-                    float intensity = 1f + Mathf.Sin(t * Mathf.PI * 2) * 0.2f;
+                    float intensity = 1f + Mathf.Sin(t * Mathf.PI * 2) * 0.15f;
                     if (img != null)
                         img.color = new Color(
                             Mathf.Clamp01(baseColor.r * intensity),
@@ -912,7 +810,7 @@ namespace NapoleonicWars.UI
                 if (detailDescription == null) yield break;
                 detailDescription.text += fullText[i];
                 if (i % 3 == 0)
-                    yield return new WaitForSeconds(0.006f);
+                    yield return new WaitForSeconds(0.005f);
             }
         }
 

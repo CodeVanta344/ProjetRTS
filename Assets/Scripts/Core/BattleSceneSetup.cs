@@ -212,8 +212,8 @@ namespace NapoleonicWars.Core
             cam.transform.rotation = Quaternion.Euler(45f, 0f, 0f);
             cam.clearFlags = CameraClearFlags.SolidColor;
             cam.backgroundColor = terrainConfigurator?.ActiveProfile?.skyColor ?? skyColor;
-            cam.farClipPlane = 600f;
-            cam.nearClipPlane = 0.5f;
+            cam.farClipPlane = 2000f;
+            cam.nearClipPlane = 0.3f;
 
             // Add camera controller
             if (cam.GetComponent<CameraController>() == null)

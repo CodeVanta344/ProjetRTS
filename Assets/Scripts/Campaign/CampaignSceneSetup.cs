@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
+using NapoleonicWars.Data;
 
 namespace NapoleonicWars.Campaign
 {
@@ -37,6 +38,13 @@ namespace NapoleonicWars.Campaign
                 tooltipGO.AddComponent<NapoleonicWars.UI.ArmyTooltipUI>();
             }
 
+            // Campaign Clock (real-time tick system)
+            if (CampaignClock.Instance == null)
+            {
+                GameObject clockGO = new GameObject("CampaignClock");
+                clockGO.AddComponent<CampaignClock>();
+            }
+            
             // Campaign UI
             GameObject uiGO = new GameObject("CampaignUI");
             uiGO.AddComponent<NapoleonicWars.UI.CampaignUI>();
@@ -117,7 +125,10 @@ namespace NapoleonicWars.Campaign
                 cam.backgroundColor = new Color(0.12f, 0.14f, 0.18f);
                 
                 // Add camera controller for movement
-                cam.gameObject.AddComponent<CampaignCameraController>();
+                var camCtrl = cam.gameObject.AddComponent<CampaignCameraController>();
+                
+                // Focus on player faction after a short delay (let map generate first)
+                StartCoroutine(FocusCameraOnPlayerFaction(camCtrl));
             }
             else
             {
@@ -128,6 +139,39 @@ namespace NapoleonicWars.Campaign
                 cam.orthographicSize = 5f;
                 cam.clearFlags = CameraClearFlags.SolidColor;
                 cam.backgroundColor = new Color(0.12f, 0.14f, 0.18f);
+            }
+        }
+        
+        private System.Collections.IEnumerator FocusCameraOnPlayerFaction(CampaignCameraController camCtrl)
+        {
+            // Wait a frame for CampaignManager + CampaignMap3D to initialize
+            yield return null;
+            yield return null;
+            
+            if (CampaignManager.Instance == null) yield break;
+            
+            FactionType playerFaction = CampaignManager.Instance.PlayerFaction;
+            var map3D = FindAnyObjectByType<CampaignMap3D>();
+            if (map3D == null) yield break;
+            
+            // Compute average world position of player's provinces
+            var provinces = CampaignManager.Instance.GetAllProvinces();
+            Vector3 sum = Vector3.zero;
+            int count = 0;
+            foreach (var prov in provinces.Values)
+            {
+                if (prov.owner == playerFaction)
+                {
+                    sum += map3D.MapToWorldPosition(prov.mapPosition);
+                    count++;
+                }
+            }
+            
+            if (count > 0)
+            {
+                Vector3 center = sum / count;
+                camCtrl.FocusOnPosition(center, 800f); // 800 = comfortable zoom level
+                Debug.Log($"[Camera] Focused on {playerFaction}: {center} ({count} provinces)");
             }
         }
     }
@@ -180,14 +224,15 @@ namespace NapoleonicWars.Campaign
             float currentSpeed = moveSpeed * Mathf.Lerp(1f, 3f, (transform.position.y - minHeight) / (maxHeight - minHeight));
             targetPosition += moveDir * currentSpeed * Time.deltaTime;
             
-            // Zoom with scroll wheel
-            float scroll = Input.GetAxis("Mouse ScrollWheel");
-            if (scroll != 0)
+            // Zoom with scroll wheel — ignore if mouse is over UI (e.g. city panel scroll)
+            if (!EventSystem.current || !EventSystem.current.IsPointerOverGameObject())
             {
-                // Zoom with Ctrl held = faster zoom
-                // HoI4 style: zoom straight up/down (Y axis), keeping top-down view
-                float actualZoomSpeed = Input.GetKey(KeyCode.LeftControl) ? zoomSpeed * 3f : zoomSpeed;
-                targetPosition.y -= scroll * actualZoomSpeed;
+                float scroll = Input.GetAxis("Mouse ScrollWheel");
+                if (scroll != 0)
+                {
+                    float actualZoomSpeed = Input.GetKey(KeyCode.LeftControl) ? zoomSpeed * 3f : zoomSpeed;
+                    targetPosition.y -= scroll * actualZoomSpeed;
+                }
             }
             
             // Clamp position
@@ -199,6 +244,15 @@ namespace NapoleonicWars.Campaign
         private void ApplyMovement()
         {
             transform.position = Vector3.Lerp(transform.position, targetPosition, Time.deltaTime * 10f);
+        }
+        
+        /// <summary>
+        /// Instantly move camera to look at a world position at a specified height.
+        /// </summary>
+        public void FocusOnPosition(Vector3 worldPos, float height = 800f)
+        {
+            targetPosition = new Vector3(worldPos.x, height, worldPos.z);
+            transform.position = targetPosition;
         }
     }
 }

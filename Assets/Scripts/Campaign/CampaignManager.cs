@@ -901,6 +901,9 @@ namespace NapoleonicWars.Campaign
             // Initialize production chain manager
             ProductionChainManager.Instance.Initialize();
             
+            // Initialize logistics convoy system
+            LogisticsConvoySystem.Initialize();
+            
             // Create major cities for each province
             foreach (var kvp in provinces)
             {
@@ -948,11 +951,99 @@ namespace NapoleonicWars.Campaign
             
             if (System.Array.Exists(capitals, x => x == provinceId))
             {
-                // Capital cities - commerce and manufacturing
-                city.AddIndustry(IndustryType.Commerce, 3);
-                city.AddIndustry(IndustryType.Manufacturing, 2);
-                city.populationData = PopulationData.FromTotal(100000);
-                city.maxPopulation = 800000;
+                city.isCapital = true;
+                city.cityLevel = 3; // Capitals start as "Ville"
+                
+                // Each capital gets unique, historically-inspired setup
+                switch (provinceId)
+                {
+                    case "paris":
+                        city.AddIndustry(IndustryType.Commerce, 4);
+                        city.AddIndustry(IndustryType.Manufacturing, 3);
+                        city.AddIndustry(IndustryType.Textile, 2);
+                        city.populationData = PopulationData.FromTotal(550000);
+                        city.maxPopulation = 1200000;
+                        city.storedFood = 600f; city.storedIron = 200f; city.storedGoods = 300f;
+                        city.maxGarrison = 3000;
+                        break;
+                    case "london":
+                        city.AddIndustry(IndustryType.Commerce, 3);
+                        city.AddIndustry(IndustryType.Manufacturing, 3);
+                        city.AddIndustry(IndustryType.Fishing, 2);
+                        city.AddIndustry(IndustryType.Shipbuilding, 2);
+                        city.populationData = PopulationData.FromTotal(900000);
+                        city.maxPopulation = 1500000;
+                        city.storedFood = 400f; city.storedIron = 500f; city.storedGoods = 400f;
+                        city.maxGarrison = 2500;
+                        break;
+                    case "moscow":
+                        city.AddIndustry(IndustryType.Agriculture, 4);
+                        city.AddIndustry(IndustryType.Commerce, 2);
+                        city.AddIndustry(IndustryType.Logging, 3);
+                        city.populationData = PopulationData.FromTotal(250000);
+                        city.maxPopulation = 800000;
+                        city.storedFood = 1000f; city.storedIron = 100f; city.storedGoods = 100f;
+                        city.maxGarrison = 4000;
+                        break;
+                    case "vienna":
+                    case "lower_austria":
+                        city.AddIndustry(IndustryType.Commerce, 3);
+                        city.AddIndustry(IndustryType.Manufacturing, 2);
+                        city.AddIndustry(IndustryType.Textile, 2);
+                        city.populationData = PopulationData.FromTotal(230000);
+                        city.maxPopulation = 600000;
+                        city.storedFood = 350f; city.storedIron = 250f; city.storedGoods = 200f;
+                        city.maxGarrison = 2500;
+                        break;
+                    case "berlin":
+                    case "brandenburg":
+                        city.AddIndustry(IndustryType.Manufacturing, 3);
+                        city.AddIndustry(IndustryType.Mining, 2);
+                        city.AddIndustry(IndustryType.Commerce, 2);
+                        city.populationData = PopulationData.FromTotal(170000);
+                        city.maxPopulation = 500000;
+                        city.storedFood = 200f; city.storedIron = 400f; city.storedGoods = 150f;
+                        city.maxGarrison = 3500;
+                        break;
+                    case "madrid":
+                    case "castile":
+                        city.AddIndustry(IndustryType.Commerce, 3);
+                        city.AddIndustry(IndustryType.Agriculture, 2);
+                        city.AddIndustry(IndustryType.Mining, 1);
+                        city.populationData = PopulationData.FromTotal(160000);
+                        city.maxPopulation = 400000;
+                        city.storedFood = 300f; city.storedIron = 150f; city.storedGoods = 350f;
+                        city.maxGarrison = 2000;
+                        break;
+                    case "constantinople":
+                    case "thrace":
+                        city.AddIndustry(IndustryType.Commerce, 4);
+                        city.AddIndustry(IndustryType.Fishing, 2);
+                        city.AddIndustry(IndustryType.Textile, 2);
+                        city.populationData = PopulationData.FromTotal(400000);
+                        city.maxPopulation = 700000;
+                        city.storedFood = 450f; city.storedIron = 100f; city.storedGoods = 500f;
+                        city.maxGarrison = 3000;
+                        break;
+                    case "st_petersburg":
+                        city.AddIndustry(IndustryType.Commerce, 2);
+                        city.AddIndustry(IndustryType.Shipbuilding, 2);
+                        city.AddIndustry(IndustryType.Manufacturing, 2);
+                        city.populationData = PopulationData.FromTotal(220000);
+                        city.maxPopulation = 500000;
+                        city.storedFood = 250f; city.storedIron = 300f; city.storedGoods = 200f;
+                        city.maxGarrison = 2500;
+                        break;
+                    default:
+                        // Other capitals — generic strong setup
+                        city.AddIndustry(IndustryType.Commerce, 3);
+                        city.AddIndustry(IndustryType.Manufacturing, 2);
+                        city.populationData = PopulationData.FromTotal(120000);
+                        city.maxPopulation = 500000;
+                        city.storedFood = 300f; city.storedIron = 200f; city.storedGoods = 150f;
+                        city.maxGarrison = 2000;
+                        break;
+                }
             }
             else if (System.Array.Exists(industrial, x => x == provinceId))
             {
@@ -1280,6 +1371,9 @@ namespace NapoleonicWars.Campaign
 
             // Diplomacy
             WarJustificationSystem.ProcessTurn(currentTurn);
+            
+            // Logistics convoys & supply chains
+            LogisticsConvoySystem.ProcessTurn(provinces);
 
             // Victory check
             var victory = WarJustificationSystem.CheckVictoryProgress(playerFaction, currentTurn);
@@ -1294,9 +1388,13 @@ namespace NapoleonicWars.Campaign
             if (currentTurn % 4 == 0)
                 AutoSave();
 
-            // Refresh city visuals
+            // Refresh city and convoy visuals
             var map3D = FindAnyObjectByType<CampaignMap3D>();
-            if (map3D != null) map3D.RefreshCityVisuals();
+            if (map3D != null)
+            {
+                map3D.RefreshCityVisuals();
+                map3D.RefreshConvoyVisuals();
+            }
 
             OnTurnChanged?.Invoke(currentTurn, playerFaction);
             Debug.Log($"[RealTime] Season tick #{currentTurn} — {SeasonSystem.DateString}");
@@ -2138,6 +2236,11 @@ namespace NapoleonicWars.Campaign
         {
             return factions.ContainsKey(playerFaction) ? factions[playerFaction] : null;
         }
+        
+        public FactionData GetFaction(FactionType type)
+        {
+            return factions.ContainsKey(type) ? factions[type] : null;
+        }
 
         public List<ArmyData> GetArmiesInProvince(string provinceId)
         {
@@ -2244,6 +2347,10 @@ namespace NapoleonicWars.Campaign
                 if (!provinces.ContainsKey(pd.id)) continue;
                 ProvinceData prov = provinces[pd.id];
                 prov.owner = SaveSystem.ParseFaction(pd.owner);
+                
+                // Restore saved position (from drag editing)
+                if (pd.mapPosX != 0f || pd.mapPosY != 0f)
+                    prov.mapPosition = new Vector2(pd.mapPosX, pd.mapPosY);
 
                 for (int i = 0; i < pd.buildings.Count && i < prov.buildings.Length; i++)
                 {
@@ -2273,11 +2380,23 @@ namespace NapoleonicWars.Campaign
                 armies[ad.armyId] = army;
             }
 
+            // Sync city positions with saved province positions
+            foreach (var kvp in cities)
+            {
+                CityData city = kvp.Value;
+                if (provinces.ContainsKey(city.provinceId))
+                    city.mapPosition = provinces[city.provinceId].mapPosition;
+            }
+
             // Reinitialize events
             eventSystem = new HistoricalEventSystem();
 
             currentFactionTurn = playerFaction;
             currentPhase = CampaignPhase.PlayerTurn;
+
+            // Refresh 3D map visuals with updated positions
+            var map3D = UnityEngine.Object.FindAnyObjectByType<CampaignMap3D>();
+            if (map3D != null) map3D.RefreshCityVisuals();
 
             OnTurnChanged?.Invoke(currentTurn, playerFaction);
             Debug.Log($"[CampaignManager] Campaign loaded: Turn {currentTurn}");

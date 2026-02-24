@@ -200,6 +200,154 @@ namespace NapoleonicWars.Campaign
             return true;
         }
 
+        /// <summary>
+        /// Propose a non-aggression pact (costs 30 PP)
+        /// </summary>
+        public DiplomacyResult ProposeNonAggression(FactionType proposer, FactionType target)
+        {
+            if (GetRelationState(proposer, target) == DiplomacyState.War)
+                return DiplomacyResult.Failure(DiplomacyFailReason.AlreadyAtWar, "Impossible en temps de guerre");
+
+            if (HasTreaty(proposer, target, TreatyType.NonAggression))
+                return DiplomacyResult.Failure(DiplomacyFailReason.TreatyExists, "Pacte déjà existant");
+
+            var cm = CampaignManager.Instance;
+            if (cm == null || !cm.Factions[proposer].SpendPoliticalPower(30f))
+                return DiplomacyResult.Failure(DiplomacyFailReason.InsufficientGold, "Pouvoir politique insuffisant (30 PP)");
+
+            var offer = new DiplomaticOffer
+            {
+                offerId = System.Guid.NewGuid().ToString(),
+                fromFaction = proposer,
+                toFaction = target,
+                actionType = DiplomaticActionType.ProposeNonAggression,
+                turnProposed = cm.CurrentTurn,
+                expiresInTurns = 5
+            };
+            SendOffer(offer);
+            return DiplomacyResult.Success("Pacte de non-agression proposé");
+        }
+
+        /// <summary>
+        /// Improve relations with a faction (costs 25 PP, +15 score)
+        /// </summary>
+        public DiplomacyResult ImproveRelations(FactionType actor, FactionType target)
+        {
+            if (GetRelationState(actor, target) == DiplomacyState.War)
+                return DiplomacyResult.Failure(DiplomacyFailReason.AlreadyAtWar, "Impossible en temps de guerre");
+
+            var cm = CampaignManager.Instance;
+            if (cm == null || !cm.Factions[actor].SpendPoliticalPower(25f))
+                return DiplomacyResult.Failure(DiplomacyFailReason.InsufficientGold, "Pouvoir politique insuffisant (25 PP)");
+
+            ModifyRelationScore(actor, target, 15);
+
+            AddHistoryEntry(actor, target, DiplomaticActionType.ImproveRelations,
+                $"{actor} a amélioré les relations avec {target} (+15)");
+            OnDiplomaticAction?.Invoke(actor, target, DiplomaticActionType.ImproveRelations);
+
+            Debug.Log($"[Diplomacy] {actor} improved relations with {target} (+15)");
+            return DiplomacyResult.Success("Relations améliorées (+15)");
+        }
+
+        /// <summary>
+        /// Send a gift of gold to another faction (costs 200g, +20 score)
+        /// </summary>
+        public DiplomacyResult SendGift(FactionType sender, FactionType target, float amount = 200f)
+        {
+            if (GetRelationState(sender, target) == DiplomacyState.War)
+                return DiplomacyResult.Failure(DiplomacyFailReason.AlreadyAtWar, "Impossible en temps de guerre");
+
+            var cm = CampaignManager.Instance;
+            if (cm == null || cm.Factions[sender].gold < amount)
+                return DiplomacyResult.Failure(DiplomacyFailReason.InsufficientGold, $"Or insuffisant ({amount}g requis)");
+
+            cm.Factions[sender].gold -= amount;
+            cm.Factions[target].gold += amount;
+            ModifyRelationScore(sender, target, 20);
+
+            AddHistoryEntry(sender, target, DiplomaticActionType.SendGift,
+                $"{sender} a envoyé un cadeau de {amount}g à {target} (+20)");
+            OnDiplomaticAction?.Invoke(sender, target, DiplomaticActionType.SendGift);
+
+            Debug.Log($"[Diplomacy] {sender} sent {amount}g gift to {target} (+20)");
+            return DiplomacyResult.Success($"Cadeau envoyé: {amount}g (+20 relation)");
+        }
+
+        /// <summary>
+        /// Insult a faction (-25 score to them, +5% war support for us)
+        /// </summary>
+        public DiplomacyResult InsultFaction(FactionType insulter, FactionType target)
+        {
+            if (GetRelationState(insulter, target) == DiplomacyState.Alliance)
+                return DiplomacyResult.Failure(DiplomacyFailReason.AlreadyAllied, "Impossible d'insulter un allié");
+
+            var cm = CampaignManager.Instance;
+            if (cm == null) return DiplomacyResult.Failure(DiplomacyFailReason.None, "Erreur");
+
+            ModifyRelationScore(insulter, target, -25);
+            cm.Factions[insulter].warSupport = Mathf.Clamp01(cm.Factions[insulter].warSupport + 0.05f);
+
+            AddHistoryEntry(insulter, target, DiplomaticActionType.InsultFaction,
+                $"{insulter} a insulté {target} (-25 relation, +5% soutien de guerre)");
+            OnDiplomaticAction?.Invoke(insulter, target, DiplomaticActionType.InsultFaction);
+
+            Debug.Log($"[Diplomacy] {insulter} insulted {target} (-25 relation, +5% war support)");
+            return DiplomacyResult.Success("Insulte envoyée (-25 relation, +5% soutien de guerre)");
+        }
+
+        /// <summary>
+        /// Guarantee independence of a faction (costs 50 PP, join war if they are attacked)
+        /// </summary>
+        public DiplomacyResult GuaranteeIndependence(FactionType guarantor, FactionType target)
+        {
+            if (GetRelationState(guarantor, target) == DiplomacyState.War)
+                return DiplomacyResult.Failure(DiplomacyFailReason.AlreadyAtWar, "Impossible en temps de guerre");
+
+            if (HasTreaty(guarantor, target, TreatyType.Guarantee))
+                return DiplomacyResult.Failure(DiplomacyFailReason.TreatyExists, "Garantie déjà existante");
+
+            var cm = CampaignManager.Instance;
+            if (cm == null || !cm.Factions[guarantor].SpendPoliticalPower(50f))
+                return DiplomacyResult.Failure(DiplomacyFailReason.InsufficientGold, "Pouvoir politique insuffisant (50 PP)");
+
+            string treatyKey = GetTreatyKey(guarantor, target, TreatyType.Guarantee);
+            var treaty = new Treaty
+            {
+                treatyId = treatyKey,
+                type = TreatyType.Guarantee,
+                factions = new List<FactionType> { guarantor, target },
+                turnSigned = cm.CurrentTurn
+            };
+            activeTreaties[treatyKey] = treaty;
+            ModifyRelationScore(guarantor, target, 15);
+
+            AddHistoryEntry(guarantor, target, DiplomaticActionType.GuaranteeIndependence,
+                $"{guarantor} garantit l'indépendance de {target}");
+            OnDiplomaticAction?.Invoke(guarantor, target, DiplomaticActionType.GuaranteeIndependence);
+
+            Debug.Log($"[Diplomacy] {guarantor} guaranteed independence of {target}");
+            return DiplomacyResult.Success("Indépendance garantie");
+        }
+
+        /// <summary>
+        /// Get PP cost for a diplomatic action
+        /// </summary>
+        public static int GetActionPPCost(DiplomaticActionType action) => action switch
+        {
+            DiplomaticActionType.DeclareWar => 20,
+            DiplomaticActionType.ProposePeace => 10,
+            DiplomaticActionType.ProposeAlliance => 35,
+            DiplomaticActionType.RequestMilitaryAccess => 20,
+            DiplomaticActionType.ProposeTradeAgreement => 15,
+            DiplomaticActionType.DemandVassalization => 100,
+            DiplomaticActionType.ProposeNonAggression => 30,
+            DiplomaticActionType.ImproveRelations => 25,
+            DiplomaticActionType.GuaranteeIndependence => 50,
+            DiplomaticActionType.ProposeMarriage => 40,
+            _ => 0
+        };
+
         #endregion
 
         #region Offer Management
@@ -263,10 +411,37 @@ namespace NapoleonicWars.Campaign
                     
                 case DiplomaticActionType.DemandVassalization:
                     return BecomeVassal(offer.toFaction, offer.fromFaction);
+
+                case DiplomaticActionType.ProposeNonAggression:
+                    return FormNonAggressionPact(offer.fromFaction, offer.toFaction);
                     
                 default:
                     return false;
             }
+        }
+
+        private bool FormNonAggressionPact(FactionType f1, FactionType f2)
+        {
+            string treatyKey = GetTreatyKey(f1, f2, TreatyType.NonAggression);
+            if (activeTreaties.ContainsKey(treatyKey)) return false;
+
+            var treaty = new Treaty
+            {
+                treatyId = treatyKey,
+                type = TreatyType.NonAggression,
+                factions = new List<FactionType> { f1, f2 },
+                turnSigned = CampaignManager.Instance?.CurrentTurn ?? 0,
+                duration = 10
+            };
+
+            activeTreaties[treatyKey] = treaty;
+            ModifyRelationScore(f1, f2, 10);
+
+            AddHistoryEntry(f1, f2, DiplomaticActionType.ProposeNonAggression,
+                $"Pacte de non-agression signé entre {f1} et {f2}");
+
+            Debug.Log($"[Diplomacy] Non-aggression pact formed between {f1} and {f2}");
+            return true;
         }
 
         private bool AcceptPeace(DiplomaticOffer offer)
@@ -782,6 +957,11 @@ namespace NapoleonicWars.Campaign
 
             // Random factor for unpredictability
             acceptanceScore += Random.Range(-10f, 10f);
+
+            // Technology diplomacy bonus (from proposer's researched diplomacy techs)
+            var proposerFaction = cm.Factions.ContainsKey(offer.fromFaction) ? cm.Factions[offer.fromFaction] : null;
+            if (proposerFaction?.techTree != null)
+                acceptanceScore += proposerFaction.techTree.TotalDiplomacyBonus * 0.3f;
 
             return acceptanceScore > 0f;
         }

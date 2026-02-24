@@ -14,8 +14,10 @@ namespace NapoleonicWars.Campaign
     {
         private Text nameText;
         private Text cardsText;
+        private Text constructionText;
         private Canvas labelCanvas;
         private RectTransform canvasRect;
+        private float constructionPulseTimer;
         
         private float baseScale = 0.12f;
         private float maxDistance = 4000f;
@@ -49,8 +51,36 @@ namespace NapoleonicWars.Campaign
             labelCanvas.renderMode = RenderMode.WorldSpace;
             
             canvasRect = canvasGO.GetComponent<RectTransform>();
-            canvasRect.sizeDelta = new Vector2(600, 120);
+            canvasRect.sizeDelta = new Vector2(600, 160);
             canvasRect.localScale = Vector3.one * baseScale;
+            
+            // === CONSTRUCTION INDICATOR (above name) ===
+            GameObject constGO = new GameObject("ConstructionIndicator");
+            constGO.transform.SetParent(canvasGO.transform, false);
+            constructionText = constGO.AddComponent<Text>();
+            constructionText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            constructionText.fontSize = 14;
+            constructionText.alignment = TextAnchor.MiddleCenter;
+            constructionText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            constructionText.verticalOverflow = VerticalWrapMode.Overflow;
+            constructionText.raycastTarget = false;
+            constructionText.supportRichText = true;
+            constructionText.color = new Color(1f, 0.85f, 0.35f);
+            constructionText.text = "";
+            
+            RectTransform constRect = constGO.GetComponent<RectTransform>();
+            constRect.anchorMin = new Vector2(0f, 0.82f);
+            constRect.anchorMax = new Vector2(1f, 1f);
+            constRect.offsetMin = Vector2.zero;
+            constRect.offsetMax = Vector2.zero;
+            
+            var constOutline = constGO.AddComponent<Outline>();
+            constOutline.effectColor = new Color(0f, 0f, 0f, 0.95f);
+            constOutline.effectDistance = new Vector2(1.2f, -1.2f);
+            var constShadow = constGO.AddComponent<Shadow>();
+            constShadow.effectColor = new Color(0f, 0f, 0f, 0.7f);
+            constShadow.effectDistance = new Vector2(1.5f, -1.5f);
+            constGO.SetActive(false);
             
             // === CITY NAME ===
             GameObject nameGO = new GameObject("NameText");
@@ -77,10 +107,10 @@ namespace NapoleonicWars.Campaign
             if (isCapital) displayName = $"★ {cityName} ★";
             nameText.text = displayName;
             
-            // Position: top part of canvas
+            // Position: top part of canvas (shifted down for construction indicator)
             RectTransform nameRect = nameGO.GetComponent<RectTransform>();
-            nameRect.anchorMin = new Vector2(0f, 0.55f);
-            nameRect.anchorMax = new Vector2(1f, 1f);
+            nameRect.anchorMin = new Vector2(0f, 0.42f);
+            nameRect.anchorMax = new Vector2(1f, 0.82f);
             nameRect.offsetMin = Vector2.zero;
             nameRect.offsetMax = Vector2.zero;
             
@@ -109,7 +139,7 @@ namespace NapoleonicWars.Campaign
             
             RectTransform cardsRect = cardsGO.GetComponent<RectTransform>();
             cardsRect.anchorMin = new Vector2(0f, 0f);
-            cardsRect.anchorMax = new Vector2(1f, 0.52f);
+            cardsRect.anchorMax = new Vector2(1f, 0.40f);
             cardsRect.offsetMin = Vector2.zero;
             cardsRect.offsetMax = Vector2.zero;
             
@@ -172,6 +202,34 @@ namespace NapoleonicWars.Campaign
             }
             
             cardsText.text = sb.ToString();
+            
+            // === CONSTRUCTION INDICATOR ===
+            UpdateConstructionIndicator(cityData);
+        }
+        
+        private void UpdateConstructionIndicator(CityData cityData)
+        {
+            if (constructionText == null) return;
+            
+            string constInfo = "";
+            if (cityData.buildings != null)
+            {
+                foreach (var b in cityData.buildings)
+                {
+                    if (b.isConstructing && !b.isConstructed)
+                    {
+                        string bName = b.buildingType.ToString();
+                        int turns = b.turnsToComplete;
+                        constInfo = $"🔨 {bName} ({turns}t)";
+                        break; // Show first active construction
+                    }
+                }
+            }
+            
+            bool hasConstruction = !string.IsNullOrEmpty(constInfo);
+            constructionText.gameObject.SetActive(hasConstruction);
+            if (hasConstruction)
+                constructionText.text = constInfo;
         }
         
         private int EstimateIncome(CityData city)
@@ -222,8 +280,8 @@ namespace NapoleonicWars.Campaign
             }
             if (canvasRect == null) return;
             
-            // Billboard: face the camera
-            transform.rotation = Quaternion.LookRotation(transform.position - mainCamera.transform.position);
+            // Fixed flat rotation — labels stay horizontal on the map (no billboard)
+            transform.rotation = Quaternion.Euler(90f, 0f, 0f);
             
             // Scale with distance so text stays readable
             float distance = Vector3.Distance(mainCamera.transform.position, transform.position);

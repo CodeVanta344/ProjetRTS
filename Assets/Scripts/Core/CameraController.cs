@@ -88,6 +88,8 @@ namespace NapoleonicWars.Core
         private void HandleEdgePan()
         {
             if (!useEdgePanning) return;
+            // Suppress edge pan while player is dragging a unit formation line
+            if (SelectionManager.Instance != null && SelectionManager.Instance.IsExtendingLine) return;
 
             Vector3 direction = Vector3.zero;
             Vector3 mousePos = Input.mousePosition;
@@ -147,6 +149,9 @@ namespace NapoleonicWars.Core
 
             if (!isDeployment && Input.GetMouseButton(1))
             {
+                // Don't pan camera while player is extending a unit formation line
+                if (SelectionManager.Instance != null && SelectionManager.Instance.IsExtendingLine)
+                    return;
                 float dragX = -Input.GetAxis("Mouse X") * panSpeed * 0.15f;
                 float dragZ = -Input.GetAxis("Mouse Y") * panSpeed * 0.15f;
                 

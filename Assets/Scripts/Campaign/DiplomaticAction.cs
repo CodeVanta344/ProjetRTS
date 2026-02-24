@@ -19,7 +19,12 @@ namespace NapoleonicWars.Campaign
         BecomeVassal,
         AcceptPeace,
         RejectOffer,
-        ProposeMarriage
+        ProposeMarriage,
+        ProposeNonAggression,
+        ImproveRelations,
+        SendGift,
+        InsultFaction,
+        GuaranteeIndependence
     }
 
     /// <summary>
@@ -42,7 +47,8 @@ namespace NapoleonicWars.Campaign
         TradeAgreement,
         Vassalage,
         NonAggression,
-        Marriage
+        Marriage,
+        Guarantee
     }
 
     /// <summary>

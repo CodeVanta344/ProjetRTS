@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections.Generic;
 using NapoleonicWars.Core;
 using NapoleonicWars.Data;
@@ -14,7 +14,7 @@ namespace NapoleonicWars.Units
     {
         public static UnitModelLoader Instance { get; private set; }
 
-        [Header("Model Prefabs (optional — falls back to primitives)")]
+        [Header("Model Prefabs (optional â€” falls back to primitives)")]
         [SerializeField] private GameObject frenchInfantryPrefab;
         [SerializeField] private GameObject frenchGrenadierPrefab;
         [SerializeField] private GameObject frenchCavalryPrefab;
@@ -124,15 +124,19 @@ namespace NapoleonicWars.Units
 
             if (key == "France_LineInfantry") 
             {
-                // Load LOD models
-                GameObject midPolyPrefab = Resources.Load<GameObject>(
-                    "Models/FrenchLineInfantry_MidPoly/Meshy_AI_Colonial_Soldier_in_a_0223111618_texture");
-                GameObject lowPolyPrefab = Resources.Load<GameObject>(
-                    "Models/FrenchLineInfantry_LowPoly/Meshy_AI_Colonial_Soldier_in_a_0223111450_texture");
-                GameObject highPolyPrefab = Resources.Load<GameObject>("Models/French_LineInfantry_Model");
+                // Load available models — prefer RIGGED (has skeleton for bone animation!)
+                string riggedPath = "Models/FrenchLineInfantry_Rigged/Soldier_Rigged";
+                string highPolyPath = "Models/FrenchLineInfantry_HighPoly/Meshy_AI_Colonial_Soldier_in_a_0223111650_texture";
+                string midPolyPath = "Models/FrenchLineInfantry_MidPoly/Meshy_AI_Colonial_Soldier_in_a_0223111618_texture";
+                string lowPolyPath = "Models/FrenchLineInfantry_LowPoly/Meshy_AI_Colonial_Soldier_in_a_0223111450_texture";
 
-                // Pick best available: mid > high > low
-                GameObject primaryPrefab = midPolyPrefab ?? highPolyPrefab ?? lowPolyPrefab;
+                GameObject riggedPrefab = Resources.Load<GameObject>(riggedPath);
+                GameObject highPolyPrefab = Resources.Load<GameObject>(highPolyPath);
+                GameObject midPolyPrefab = Resources.Load<GameObject>(midPolyPath);
+                GameObject lowPolyPrefab = Resources.Load<GameObject>(lowPolyPath);
+
+                // Priority: rigged > high > mid > low  
+                GameObject primaryPrefab = riggedPrefab ?? highPolyPrefab ?? midPolyPrefab ?? lowPolyPrefab;
                 GameObject distantPrefab = lowPolyPrefab ?? midPolyPrefab;
 
                 if (primaryPrefab == null)
@@ -141,21 +145,18 @@ namespace NapoleonicWars.Units
                     return CreatePrimitiveFallback(data);
                 }
 
-                Debug.Log($"[UnitModelLoader] French LOD: primary={primaryPrefab.name}, distant={(distantPrefab != null ? distantPrefab.name : "none")}");
+                Debug.Log($"[UnitModelLoader] French Infantry: primary={primaryPrefab.name} (highPoly={(highPolyPrefab != null)})");
 
-                // --- Build shared material (one for all soldiers) ---
-                string midTexBase = "Models/FrenchLineInfantry_MidPoly/Meshy_AI_Colonial_Soldier_in_a_0223111618_texture";
-                string lowTexBase = "Models/FrenchLineInfantry_LowPoly/Meshy_AI_Colonial_Soldier_in_a_0223111450_texture";
-
-                Texture2D albedo = Resources.Load<Texture2D>(midTexBase) 
-                    ?? Resources.Load<Texture2D>(lowTexBase)
-                    ?? Resources.Load<Texture2D>("Models/FrenchSoldierAlbedo");
-                Texture2D normal = Resources.Load<Texture2D>(midTexBase + "_normal") 
-                    ?? Resources.Load<Texture2D>(lowTexBase + "_normal")
-                    ?? Resources.Load<Texture2D>("Models/FrenchSoldierNormal");
-                Texture2D metallic = Resources.Load<Texture2D>(midTexBase + "_metallic") 
-                    ?? Resources.Load<Texture2D>(lowTexBase + "_metallic")
-                    ?? Resources.Load<Texture2D>("Models/FrenchSoldierMetallic");
+                // --- Build material from best available textures ---
+                Texture2D albedo = Resources.Load<Texture2D>(highPolyPath) 
+                    ?? Resources.Load<Texture2D>(midPolyPath)
+                    ?? Resources.Load<Texture2D>(lowPolyPath);
+                Texture2D normal = Resources.Load<Texture2D>(highPolyPath + "_normal") 
+                    ?? Resources.Load<Texture2D>(midPolyPath + "_normal")
+                    ?? Resources.Load<Texture2D>(lowPolyPath + "_normal");
+                Texture2D metallic = Resources.Load<Texture2D>(highPolyPath + "_metallic") 
+                    ?? Resources.Load<Texture2D>(midPolyPath + "_metallic")
+                    ?? Resources.Load<Texture2D>(lowPolyPath + "_metallic");
 
                 Material mat = new Material(NapoleonicWars.Core.URPMaterialHelper.LitShader);
                 mat.enableInstancing = true;
@@ -164,46 +165,38 @@ namespace NapoleonicWars.Units
                 if (normal != null) { mat.SetTexture("_BumpMap", normal); mat.EnableKeyword("_NORMALMAP"); }
                 if (metallic != null) mat.SetTexture("_MetallicGlossMap", metallic);
 
-                // --- Build wrapper with LOD ---
                 float baseScale = data.visualScaleMultiplier > 0 ? data.visualScaleMultiplier : 1f;
                 GameObject wrapper = new GameObject("FrenchSoldier_Wrapper");
 
-                // LOD0: mid-poly (close range)
+                // LOD0: primary model
                 GameObject lod0 = Instantiate(primaryPrefab);
-                lod0.name = "LOD0_MidPoly";
+                lod0.name = "LOD0_Primary";
                 lod0.transform.SetParent(wrapper.transform);
                 lod0.transform.localScale = Vector3.one * baseScale * 100f;
                 lod0.transform.localPosition = new Vector3(0f, 0.9f, 0f);
                 foreach (Renderer r in lod0.GetComponentsInChildren<Renderer>())
                     r.sharedMaterial = mat;
 
+                // LOD1: distant mesh (lower poly)
                 if (distantPrefab != null && distantPrefab != primaryPrefab)
                 {
-                    // LOD1: low-poly (far range)
                     GameObject lod1 = Instantiate(distantPrefab);
-                    lod1.name = "LOD1_LowPoly";
+                    lod1.name = "LOD1_Distant";
                     lod1.transform.SetParent(wrapper.transform);
                     lod1.transform.localScale = Vector3.one * baseScale * 100f;
                     lod1.transform.localPosition = new Vector3(0f, 0.9f, 0f);
                     foreach (Renderer r in lod1.GetComponentsInChildren<Renderer>())
                         r.sharedMaterial = mat;
 
-                    // Setup LOD Group
                     LODGroup lodGroup = wrapper.AddComponent<LODGroup>();
                     Renderer[] lod0Renderers = lod0.GetComponentsInChildren<Renderer>();
                     Renderer[] lod1Renderers = lod1.GetComponentsInChildren<Renderer>();
                     LOD[] lods = new LOD[3];
-                    lods[0] = new LOD(0.15f, lod0Renderers);  // Mid-poly: 100%→15% screen height
-                    lods[1] = new LOD(0.02f, lod1Renderers);  // Low-poly: 15%→2% screen height
-                    lods[2] = new LOD(0f, new Renderer[0]);    // Culled below 2%
+                    lods[0] = new LOD(0.05f, lod0Renderers);
+                    lods[1] = new LOD(0.005f, lod1Renderers);
+                    lods[2] = new LOD(0f, new Renderer[0]);
                     lodGroup.SetLODs(lods);
                     lodGroup.RecalculateBounds();
-
-                    Debug.Log("[UnitModelLoader] French Infantry: LOD system active (mid + low poly)");
-                }
-                else
-                {
-                    Debug.Log("[UnitModelLoader] French Infantry: single LOD (no distant mesh)");
                 }
 
                 CapsuleCollider col = wrapper.AddComponent<CapsuleCollider>();
@@ -211,102 +204,26 @@ namespace NapoleonicWars.Units
                 col.center = new Vector3(0f, 0.9f, 0f);
                 col.radius = 0.3f;
 
-                // --- Load animation clips from external FBX files ---
-                Animation anim = lod0.GetComponentInChildren<Animation>();
-                if (anim == null)
-                    anim = lod0.AddComponent<Animation>();
+                // Check if model has bones (skeleton)
+                Transform[] allTransforms = lod0.GetComponentsInChildren<Transform>();
+                bool hasBones = allTransforms.Length > 5; // More than root + a few mesh nodes = likely has skeleton
                 
-                // Try loading clips from the model FBX
-                AnimationClip[] modelClips = Resources.LoadAll<AnimationClip>(
-                    "Models/FrenchLineInfantry_MidPoly/Meshy_AI_Colonial_Soldier_in_a_0223111618_texture");
-                Debug.Log($"[UnitModelLoader] Model clips (MidPoly): {(modelClips != null ? modelClips.Length : 0)}");
-                
-                if (modelClips == null || modelClips.Length == 0)
-                {
-                    modelClips = Resources.LoadAll<AnimationClip>("Models/French_LineInfantry_Model");
-                    Debug.Log($"[UnitModelLoader] Model clips (Prefab): {(modelClips != null ? modelClips.Length : 0)}");
-                }
-                
-                // Try multiple paths for walk animation
-                string[] walkPaths = {
-                    "Models/Animations/conscrit_walking",
-                    "Models/Animations/conscrit walking",
-                };
-                AnimationClip[] walkClips = null;
-                foreach (string wPath in walkPaths)
-                {
-                    walkClips = Resources.LoadAll<AnimationClip>(wPath);
-                    if (walkClips != null && walkClips.Length > 0)
-                    {
-                        Debug.Log($"[UnitModelLoader] Walk clips found at '{wPath}': {walkClips.Length}");
-                        break;
-                    }
-                }
-                if (walkClips == null || walkClips.Length == 0)
-                    Debug.LogWarning("[UnitModelLoader] NO walk animation clips found! Run Tools > Reimport Animation FBX");
-                
-                // Combine all clips
-                var allClipsList = new List<AnimationClip>();
-                if (modelClips != null) allClipsList.AddRange(modelClips);
-                if (walkClips != null) allClipsList.AddRange(walkClips);
-                
-                Debug.Log($"[UnitModelLoader] Total clips to add: {allClipsList.Count}");
+                Debug.Log($"[UnitModelLoader] Model has {allTransforms.Length} transforms (hasBones={hasBones})");
+                for (int i = 0; i < Mathf.Min(allTransforms.Length, 30); i++)
+                    Debug.Log($"  Transform[{i}]: {allTransforms[i].name}");
 
-                int addedClips = 0;
-                foreach (AnimationClip clip in allClipsList)
+                if (!hasBones)
                 {
-                    if (clip == null || clip.name.StartsWith("__preview__")) continue;
-                    
-                    // Extract simple name: "ArmatureName|Walk" -> "walk"
-                    string simpleName = clip.name;
-                    int pipeIdx = simpleName.LastIndexOf('|');
-                    if (pipeIdx >= 0 && pipeIdx < simpleName.Length - 1)
-                        simpleName = simpleName.Substring(pipeIdx + 1);
-                    simpleName = simpleName.ToLower().Replace(" ", "_");
-                    
-                    // Map various naming conventions to the names UnitAnimator expects
-                    // Mixamo exports use 'Armature|mixamo.com' as clip name
-                    if (simpleName.Contains("walk") || simpleName.Contains("march") || simpleName.Contains("conscrit") || simpleName.Contains("mixamo"))
-                        simpleName = "walk";
-                    else if (simpleName.Contains("idle") || simpleName.Contains("stand"))
-                        simpleName = "idle";
-                    else if (simpleName.Contains("run") || simpleName.Contains("charge"))
-                        simpleName = "charge";
-                    else if (simpleName.Contains("death") || simpleName.Contains("die"))
-                        simpleName = "death";
-                    else if (simpleName.Contains("attack") || simpleName.Contains("melee"))
-                        simpleName = "attack_melee";
-                    else if (simpleName.Contains("fire") || simpleName.Contains("shoot"))
-                        simpleName = "standing_fire";
-                    else if (simpleName.Contains("reload"))
-                        simpleName = "reload";
-                    else if (simpleName.Contains("flee"))
-                        simpleName = "flee";
-                    
-                    clip.legacy = true;
-                    
-                    // Set loop mode for walk/idle/charge/flee
-                    if (simpleName == "walk" || simpleName == "idle" || simpleName == "charge" || simpleName == "flee")
-                        clip.wrapMode = WrapMode.Loop;
-                    
-                    anim.AddClip(clip, simpleName);
-                    addedClips++;
-                    Debug.Log($"[UnitModelLoader] Added clip '{clip.name}' -> '{simpleName}' (legacy={clip.legacy}, length={clip.length:F2}s)");
-                }
-
-                // Set default clip to idle or walk
-                if (anim.GetClip("idle") != null)
-                {
-                    anim.clip = anim.GetClip("idle");
-                    anim.Play("idle");
-                }
-                else if (anim.GetClip("walk") != null)
-                {
-                    anim.clip = anim.GetClip("walk");
-                    anim.Play("walk");
+                    // Static mesh: strip unused animators, use root-only procedural
+                    Animation legacyAnim = lod0.GetComponentInChildren<Animation>();
+                    if (legacyAnim != null) Destroy(legacyAnim);
+                    Animator unusedAnimator = lod0.GetComponentInChildren<Animator>();
+                    if (unusedAnimator != null) Destroy(unusedAnimator);
                 }
                 
-                Debug.Log($"[UnitModelLoader] French Infantry FINAL: {addedClips} clips loaded, walk={anim.GetClip("walk") != null}, idle={anim.GetClip("idle") != null}");
+                // Add procedural animation (auto-detects bones in Start())
+                lod0.AddComponent<ProceduralUnitAnimation>();
+                Debug.Log($"[UnitModelLoader] French Infantry: ProceduralUnitAnimation added (bones={hasBones})");
 
                 wrapper.AddComponent<UnitAnimator>();
                 return wrapper;
@@ -376,7 +293,7 @@ namespace NapoleonicWars.Units
 
             string key = GetPrefabKey(data);
 
-            // Remove any existing Animator — we use Legacy Animation instead
+            // Remove any existing Animator â€” we use Legacy Animation instead
             Animator existingAnimator = go.GetComponentInChildren<Animator>();
             if (existingAnimator != null)
                 Destroy(existingAnimator);
@@ -388,7 +305,7 @@ namespace NapoleonicWars.Units
 
             if (allClips != null && allClips.Length > 0)
             {
-                // Use Legacy Animation component — no controller needed
+                // Use Legacy Animation component â€” no controller needed
                 Animation anim = go.GetComponent<Animation>();
                 if (anim == null)
                     anim = go.AddComponent<Animation>();
@@ -591,6 +508,27 @@ namespace NapoleonicWars.Units
             }
 
             return wheel;
+        }
+
+        /// <summary>
+        /// Load the best AnimationClip from one of multiple resource paths.
+        /// Returns the first non-preview clip found.
+        /// </summary>
+        private static AnimationClip LoadBestClip(params string[] paths)
+        {
+            foreach (string p in paths)
+            {
+                AnimationClip[] clips = Resources.LoadAll<AnimationClip>(p);
+                if (clips != null)
+                {
+                    foreach (var clip in clips)
+                    {
+                        if (clip != null && !clip.name.StartsWith("__preview__"))
+                            return clip;
+                    }
+                }
+            }
+            return null;
         }
     }
 }

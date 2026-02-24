@@ -21,6 +21,9 @@ namespace NapoleonicWars.Campaign
         // City level (1-5)
         public int cityLevel = 1;
         
+        // Capital city — unique resources, higher production, larger storage
+        public bool isCapital = false;
+        
         // Computed total population
         public int population => populationData.Total;
         

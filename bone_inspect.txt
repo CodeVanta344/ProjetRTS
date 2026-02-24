@@ -1,0 +1,62 @@
+﻿FBX version: 7400
+=== ALL OBJECTS ===
+  ARMATURE: Armature
+  MESH: char1
+
+=== ARMATURE BONES ===
+Armature: Armature
+  Hips (parent=ROOT) head=(0.000,-3.224,96.225)
+  LeftUpLeg (parent=Hips) head=(7.376,-4.178,87.306)
+  LeftLeg (parent=LeftUpLeg) head=(10.267,-7.994,51.628)
+  LeftFoot (parent=LeftLeg) head=(10.635,-5.431,12.750)
+  LeftToeBase (parent=LeftFoot) head=(12.853,-15.617,3.418)
+  RightUpLeg (parent=Hips) head=(-7.116,-4.171,87.379)
+  RightLeg (parent=RightUpLeg) head=(-9.903,-7.957,51.993)
+  RightFoot (parent=RightLeg) head=(-10.271,-5.479,12.386)
+  RightToeBase (parent=RightFoot) head=(-12.100,-15.536,3.205)
+  Spine02 (parent=Hips) head=(0.061,-2.443,107.692)
+  Spine01 (parent=Spine02) head=(0.122,-1.663,119.158)
+  Spine (parent=Spine01) head=(0.182,-0.882,130.625)
+  LeftShoulder (parent=Spine) head=(3.740,-0.958,135.246)
+  LeftArm (parent=LeftShoulder) head=(17.969,-1.033,135.246)
+  LeftForeArm (parent=LeftArm) head=(39.240,-3.728,129.010)
+  LeftHand (parent=LeftForeArm) head=(61.979,-4.941,127.545)
+  RightShoulder (parent=Spine) head=(-3.375,-0.962,134.514)
+  RightArm (parent=RightShoulder) head=(-17.604,-1.042,134.514)
+  RightForeArm (parent=RightArm) head=(-37.410,-3.756,129.010)
+  RightHand (parent=RightForeArm) head=(-61.250,-5.285,127.913)
+  neck (parent=Spine) head=(0.281,-0.341,138.568)
+  Head (parent=neck) head=(0.365,0.122,145.368)
+  head_end (parent=Head) head=(0.614,-2.107,167.340)
+  headfront (parent=Head) head=(0.365,-18.349,145.368)
+
+=== MESH INFO ===
+Mesh: char1, verts=4673, faces=9341
+  Vertex groups: 22
+    VGroup: Hips
+    VGroup: LeftUpLeg
+    VGroup: LeftLeg
+    VGroup: LeftFoot
+    VGroup: LeftToeBase
+    VGroup: RightUpLeg
+    VGroup: RightLeg
+    VGroup: RightFoot
+    VGroup: RightToeBase
+    VGroup: Spine02
+    VGroup: Spine01
+    VGroup: Spine
+    VGroup: LeftShoulder
+    VGroup: LeftArm
+    VGroup: LeftForeArm
+    VGroup: LeftHand
+    VGroup: RightShoulder
+    VGroup: RightArm
+    VGroup: RightForeArm
+    VGroup: RightHand
+    VGroup: neck
+    VGroup: Head
+  Modifier: ARMATURE name=Armature
+  Vertices with non-zero weight: 4673/4673
+Blender 5.0.1 (hash a3db93c5b259 built 2025-12-16 01:32:30)
+
+Blender quit

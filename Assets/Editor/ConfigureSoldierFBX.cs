@@ -30,6 +30,7 @@ public class ConfigureSoldierFBX : AssetPostprocessor
         {
             string path = AssetDatabase.GUIDToAssetPath(guid);
             if (!path.EndsWith(".fbx", System.StringComparison.OrdinalIgnoreCase)) continue;
+            if (path.Contains("Models/Animations/")) continue; // Skip animation-only FBX
             string name = Path.GetFileNameWithoutExtension(path);
             if (name.EndsWith("_Rig")) continue;
 
@@ -64,6 +65,8 @@ public class ConfigureSoldierFBX : AssetPostprocessor
     {
         if (!assetPath.StartsWith("Assets/Resources/Models/")) return;
         if (!assetPath.EndsWith(".fbx", System.StringComparison.OrdinalIgnoreCase)) return;
+        // Skip animation-only FBX files — they use their own clip names and don't need Generic rig
+        if (assetPath.Contains("Models/Animations/")) return;
 
         ModelImporter importer = assetImporter as ModelImporter;
         if (importer == null) return;
@@ -79,6 +82,17 @@ public class ConfigureSoldierFBX : AssetPostprocessor
         importer.optimizeMeshPolygons = true;
         importer.optimizeMeshVertices = true;
         importer.addCollider = false;
+        importer.optimizeGameObjects = false; // CRITICAL: keep bone transforms at runtime
+
+        // Also disable bone optimization — without this, Unity strips bones
+        // that have no animation curves (and we use procedural animation, not clips!)
+        var so = new UnityEditor.SerializedObject(importer);
+        var optimizeBones = so.FindProperty("m_OptimizeBones");
+        if (optimizeBones != null)
+        {
+            optimizeBones.boolValue = false;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
 
         // Animation settings
         importer.importAnimation = true;
@@ -95,6 +109,7 @@ public class ConfigureSoldierFBX : AssetPostprocessor
     {
         if (!assetPath.StartsWith("Assets/Resources/Models/")) return;
         if (!assetPath.EndsWith(".fbx", System.StringComparison.OrdinalIgnoreCase)) return;
+        if (assetPath.Contains("Models/Animations/")) return;
 
         // Skip _Rig files
         string fileName = Path.GetFileNameWithoutExtension(assetPath);
@@ -146,6 +161,9 @@ public class ConfigureSoldierFBX : AssetPostprocessor
             string path = AssetDatabase.GUIDToAssetPath(guid);
             if (!path.EndsWith(".fbx", System.StringComparison.OrdinalIgnoreCase))
                 continue;
+            // Skip animation-only FBX files
+            if (path.Contains("Models/Animations/"))
+                continue;
 
             // Skip old _Rig files
             string fileName = Path.GetFileNameWithoutExtension(path);
@@ -167,6 +185,7 @@ public class ConfigureSoldierFBX : AssetPostprocessor
             importer.isReadable = false;
             importer.optimizeMeshPolygons = true;
             importer.optimizeMeshVertices = true;
+            importer.optimizeGameObjects = false; // CRITICAL: keep bone transforms at runtime
 
             // Animation
             importer.importAnimation = true;
@@ -366,6 +385,10 @@ public class ConfigureSoldierFBX : AssetPostprocessor
                 continue;
 
             string soldierName = Path.GetFileNameWithoutExtension(fbxPath);
+
+            // Skip animation-only FBX files
+            if (fbxPath.Contains("Models/Animations/"))
+                continue;
 
             // Skip armature-only Rig files (no animation clips)
             if (soldierName.EndsWith("_Rig"))

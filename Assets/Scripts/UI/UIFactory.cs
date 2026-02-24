@@ -6,47 +6,52 @@ namespace NapoleonicWars.UI
 {
     public static class UIFactory
     {
-        // === HOI4 COLOR PALETTE — dark olive/grey, clean & modern ===
+        // === PRESTIGE 4X COLOR PALETTE — Napoleonic Era Aesthetic ===
         
-        // Accent colors
-        public static readonly Color GoldAccent = new Color(0.78f, 0.72f, 0.50f);      // Muted gold-khaki
-        public static readonly Color BronzeHighlight = new Color(0.65f, 0.58f, 0.38f);
-        public static readonly Color GreenAccent = new Color(0.35f, 0.55f, 0.30f);      // HoI4 green
-        public static readonly Color GreenBright = new Color(0.45f, 0.72f, 0.38f);      // Bright action green
-        public static readonly Color BorderGold = new Color(0.40f, 0.38f, 0.30f, 0.6f); // Subtle border
-        public static readonly Color BorderGoldBright = new Color(0.50f, 0.48f, 0.38f, 0.8f);
+        // Accents
+        public static readonly Color EmpireGold = new Color(0.77f, 0.63f, 0.35f);    // Imperial Gold
+        public static readonly Color BrightGold = new Color(0.92f, 0.82f, 0.55f);
+        public static readonly Color MutedGold = new Color(0.55f, 0.48f, 0.35f);
+        public static readonly Color ImperialCrimson = new Color(0.61f, 0.11f, 0.11f); // Deep Napoleonic Red
         
-        // Backgrounds — cool dark olive-grey
-        public static readonly Color DarkBg = new Color(0.10f, 0.11f, 0.10f, 0.96f);
-        public static readonly Color PanelBg = new Color(0.14f, 0.15f, 0.13f, 0.94f);
-        public static readonly Color HeaderBg = new Color(0.18f, 0.19f, 0.17f, 0.97f);
-        public static readonly Color DarkStone = new Color(0.12f, 0.13f, 0.11f, 0.95f);
-        public static readonly Color PanelBgLight = new Color(0.18f, 0.20f, 0.17f, 0.92f);
+        // Backgrounds
+        public static readonly Color DeepCharcoal = new Color(0.08f, 0.09f, 0.10f, 0.98f);
+        public static readonly Color PanelSurface = new Color(0.12f, 0.13f, 0.14f, 0.97f);
+        public static readonly Color HeaderSurface = new Color(0.16f, 0.17f, 0.18f, 1.0f);
+        public static readonly Color GlassOverlay = new Color(0.05f, 0.05f, 0.06f, 0.85f);
         
-        // No more crimson — HoI4 uses red only for alerts
-        public static readonly Color AlertRed = new Color(0.75f, 0.25f, 0.20f);
-        public static readonly Color WarningYellow = new Color(0.85f, 0.75f, 0.30f);
+        // Interactive
+        public static readonly Color ActionGreen = new Color(0.28f, 0.48f, 0.22f);
+        public static readonly Color WarningAmber = new Color(0.82f, 0.58f, 0.15f);
         
-        // Buttons — dark with green tint
-        public static readonly Color ButtonNormal = new Color(0.16f, 0.18f, 0.15f, 0.95f);
-        public static readonly Color ButtonHover = new Color(0.22f, 0.26f, 0.20f, 0.95f);
-        public static readonly Color ButtonActive = new Color(0.30f, 0.40f, 0.25f, 0.95f);
-        
-        // Text — clean white/grey
-        public static readonly Color TextWhite = new Color(0.90f, 0.90f, 0.88f);
-        public static readonly Color TextGrey = new Color(0.58f, 0.58f, 0.55f);
-        public static readonly Color ParchmentBeige = new Color(0.80f, 0.78f, 0.70f);
-        public static readonly Color TextGold = GoldAccent;
-        
-        // Faction accents (kept)
-        public static readonly Color FranceBlue = new Color(0.25f, 0.4f, 0.9f);
-        public static readonly Color BritainRed = new Color(0.9f, 0.25f, 0.25f);
-        
-        // Legacy alias
-        public static readonly Color CrimsonDark = AlertRed;
-        public static readonly Color CrimsonDeep = new Color(0.50f, 0.15f, 0.12f);
-        public static readonly Color CrimsonGlow = new Color(0.70f, 0.25f, 0.18f);
-        public static readonly Color WarpGlow = GreenAccent;
+        // Text
+        public static readonly Color Porcelain = new Color(0.95f, 0.94f, 0.92f);
+        public static readonly Color SilverText = new Color(0.75f, 0.76f, 0.78f);
+        public static readonly Color Parchment = new Color(0.85f, 0.80f, 0.70f);
+        public static readonly Color GoldText = EmpireGold;
+
+        // Legacy compatibility aliases
+        public static readonly Color GoldAccent = EmpireGold;
+        public static readonly Color TextWhite = Porcelain;
+        public static readonly Color TextGrey = SilverText;
+        public static readonly Color DarkBg = DeepCharcoal;
+        public static readonly Color PanelBg = PanelSurface;
+        public static readonly Color HeaderBg = HeaderSurface;
+        public static readonly Color AlertRed = ImperialCrimson;
+        public static readonly Color ParchmentBeige = Parchment;
+        public static readonly Color TextGold = EmpireGold;
+        public static readonly Color BorderGold = MutedGold;
+        public static readonly Color BorderGoldBright = BrightGold;
+        public static readonly Color CrimsonDeep = ImperialCrimson;
+        public static readonly Color CrimsonGlow = new Color(0.85f, 0.20f, 0.15f);
+        public static readonly Color DarkStone = new Color(0.18f, 0.17f, 0.16f);
+        public static readonly Color BronzeHighlight = new Color(0.72f, 0.53f, 0.26f);
+        public static readonly Color FranceBlue = new Color(0.20f, 0.30f, 0.65f);
+        public static readonly Color BritainRed = new Color(0.75f, 0.15f, 0.15f);
+
+        // Button state colors
+        public static readonly Color ButtonNormal = DeepCharcoal;
+        public static readonly Color ButtonActive = new Color(0.28f, 0.26f, 0.18f);
 
         // === CANVAS ===
         public static Canvas CreateCanvas(string name, int sortOrder = 0)
@@ -119,31 +124,47 @@ namespace NapoleonicWars.UI
         }
         
         /// <summary>
-        /// Modern flat panel with thin border and inner content area.
-        /// Replaces the old ornate Warhammer panel. The inner content area is named "Inner"
-        /// and can be accessed via transform.Find("Inner").
+        /// Modern prestige panel with layered borders and inner content area.
+        /// The inner content area is named "Inner" and can be accessed via transform.Find("Inner").
         /// </summary>
-        public static RectTransform CreateOrnatePanel(Transform parent, string name, Color bgColor)
+        public static RectTransform CreateOrnatePanel(Transform parent, string name, Color bgColor, Vector2? size = null)
         {
-            // Outer container with thin border
-            GameObject outerGO = new GameObject(name);
-            outerGO.transform.SetParent(parent, false);
-            RectTransform outerRT = outerGO.AddComponent<RectTransform>();
-            Image outerImg = outerGO.AddComponent<Image>();
-            outerImg.color = new Color(0.25f, 0.26f, 0.22f, 0.7f); // Subtle olive border
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            RectTransform rect = go.AddComponent<RectTransform>();
+            if (size.HasValue) rect.sizeDelta = size.Value;
 
-            // Inner content area
+            // 1. Ornate Border (Muted Gold)
+            Image borderImg = go.AddComponent<Image>();
+            borderImg.color = MutedGold;
+
+            // 2. Main Surface
+            GameObject surface = new GameObject("Surface");
+            surface.transform.SetParent(go.transform, false);
+            RectTransform sRect = surface.AddComponent<RectTransform>();
+            sRect.anchorMin = Vector2.zero; sRect.anchorMax = Vector2.one;
+            sRect.offsetMin = new Vector2(1, 1); sRect.offsetMax = new Vector2(-1, -1);
+            Image sImg = surface.AddComponent<Image>();
+            sImg.color = bgColor;
+
+            // 3. Inner Design Frame
+            GameObject design = new GameObject("DesignFrame");
+            design.transform.SetParent(surface.transform, false);
+            RectTransform dRect = design.AddComponent<RectTransform>();
+            dRect.anchorMin = Vector2.zero; dRect.anchorMax = Vector2.one;
+            dRect.offsetMin = new Vector2(2, 2); dRect.offsetMax = new Vector2(-2, -2);
+            Outline outline = design.AddComponent<Outline>();
+            outline.effectColor = new Color(0, 0, 0, 0.35f);
+            outline.effectDistance = new Vector2(1, 1);
+
+            // 4. Content Area — parented directly to root so Find("Inner") works
             GameObject innerGO = new GameObject("Inner");
-            innerGO.transform.SetParent(outerGO.transform, false);
+            innerGO.transform.SetParent(go.transform, false);
             RectTransform innerRT = innerGO.AddComponent<RectTransform>();
-            innerRT.anchorMin = Vector2.zero;
-            innerRT.anchorMax = Vector2.one;
-            innerRT.offsetMin = new Vector2(1f, 1f);
-            innerRT.offsetMax = new Vector2(-1f, -1f);
-            Image innerImg = innerGO.AddComponent<Image>();
-            innerImg.color = bgColor;
+            innerRT.anchorMin = Vector2.zero; innerRT.anchorMax = Vector2.one;
+            innerRT.offsetMin = new Vector2(5, 5); innerRT.offsetMax = new Vector2(-5, -5);
 
-            return outerRT;
+            return rect;
         }
 
         // === TEXT ===
@@ -159,122 +180,113 @@ namespace NapoleonicWars.UI
             text.font = Font.CreateDynamicFontFromOSFont("Arial", fontSize);
             text.fontSize = fontSize;
             text.alignment = alignment;
-            text.color = color ?? TextWhite;
+            text.color = color ?? Porcelain;
             text.raycastTarget = false;
             text.supportRichText = true;
 
             return text;
         }
 
-        // === BUTTON — Clean flat modern style ===
+        // === BUTTON — Prestige Style ===
         public static Button CreateButton(Transform parent, string name, string label,
             int fontSize = 14, UnityAction onClick = null)
         {
             GameObject go = new GameObject(name);
             go.transform.SetParent(parent, false);
-            go.AddComponent<RectTransform>();
+            RectTransform rect = go.AddComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(160, 36);
 
             Image img = go.AddComponent<Image>();
-            img.color = ButtonNormal;
+            img.color = DeepCharcoal;
+            
+            Outline outline = go.AddComponent<Outline>();
+            outline.effectColor = MutedGold;
+            outline.effectDistance = new Vector2(1, 1);
 
             Button btn = go.AddComponent<Button>();
             ColorBlock cb = btn.colors;
             cb.normalColor = Color.white;
-            cb.highlightedColor = new Color(1.3f, 1.3f, 1.2f);
-            cb.pressedColor = new Color(0.7f, 0.7f, 0.65f);
-            cb.selectedColor = new Color(1.15f, 1.15f, 1.1f);
-            cb.fadeDuration = 0.08f;
+            cb.highlightedColor = new Color(1.2f, 1.15f, 1.05f);
+            cb.pressedColor = EmpireGold;
+            cb.selectedColor = Color.white;
+            cb.fadeDuration = 0.1f;
             btn.colors = cb;
 
             if (onClick != null)
                 btn.onClick.AddListener(onClick);
 
-            Text text = CreateText(go.transform, "Label", label, fontSize, TextAnchor.MiddleCenter, TextWhite);
-            RectTransform textRT = text.GetComponent<RectTransform>();
-            textRT.anchorMin = Vector2.zero;
-            textRT.anchorMax = Vector2.one;
-            textRT.offsetMin = new Vector2(4, 0);
-            textRT.offsetMax = new Vector2(-4, 0);
+            Text t = CreateText(go.transform, "Label", label, fontSize, TextAnchor.MiddleCenter, Porcelain);
+            t.horizontalOverflow = HorizontalWrapMode.Overflow;
+            // Stretch label to fill button
+            RectTransform labelRT = t.GetComponent<RectTransform>();
+            labelRT.anchorMin = Vector2.zero;
+            labelRT.anchorMax = Vector2.one;
+            labelRT.offsetMin = Vector2.zero;
+            labelRT.offsetMax = Vector2.zero;
 
             return btn;
         }
 
-        /// <summary>Modern accent button — used for primary actions. Green-tinted.</summary>
         public static Button CreateGoldButton(Transform parent, string name, string label,
             int fontSize = 14, UnityAction onClick = null)
         {
             Button btn = CreateButton(parent, name, label, fontSize, onClick);
             
             Image img = btn.GetComponent<Image>();
-            img.color = new Color(0.18f, 0.22f, 0.16f, 0.95f);
+            img.color = ImperialCrimson;
             
-            // Update label color to accent
-            Text labelText = btn.GetComponentInChildren<Text>();
-            if (labelText != null) labelText.color = GoldAccent;
+            Outline outline = btn.GetComponent<Outline>();
+            if (outline != null) outline.effectColor = EmpireGold;
 
             return btn;
         }
         
-        /// <summary>Alias — kept for backward compatibility, same as CreateGoldButton.</summary>
         public static Button CreateWarhammerButton(Transform parent, string name, string label,
             int fontSize = 18, UnityAction onClick = null)
         {
             return CreateGoldButton(parent, name, label, fontSize, onClick);
         }
         
-        // === SECTION HEADER — clean bar with accent ===
-        public static RectTransform CreateBannerHeader(Transform parent, string name, string title, int fontSize = 18)
+        // === SECTION HEADER — Imperial Style ===
+        public static RectTransform CreateBannerHeader(Transform parent, string name, string title, int fontSize = 20)
         {
-            RectTransform container = CreatePanel(parent, name, HeaderBg);
+            RectTransform container = CreatePanel(parent, name, HeaderSurface);
             
-            // Left green accent bar
-            RectTransform leftBar = CreatePanel(container, "Accent", GreenAccent);
-            leftBar.anchorMin = new Vector2(0, 0.1f);
-            leftBar.anchorMax = new Vector2(0, 0.9f);
-            leftBar.offsetMin = Vector2.zero;
-            leftBar.offsetMax = new Vector2(3, 0);
-            leftBar.GetComponent<Image>().raycastTarget = false;
+            // Bottom gold line
+            RectTransform line = CreatePanel(container, "GoldLine", EmpireGold);
+            line.anchorMin = new Vector2(0, 0);
+            line.anchorMax = new Vector2(1, 0);
+            line.offsetMin = Vector2.zero;
+            line.offsetMax = new Vector2(0, 2);
             
-            // Title
-            Text text = CreateText(container, "Title", title, fontSize, TextAnchor.MiddleLeft, TextWhite);
+            // Title (centered and uppercase for authority)
+            Text text = CreateText(container, "Title", title.ToUpper(), fontSize, TextAnchor.MiddleCenter, EmpireGold);
             text.fontStyle = FontStyle.Bold;
-            RectTransform textRT = text.GetComponent<RectTransform>();
-            textRT.anchorMin = Vector2.zero;
-            textRT.anchorMax = Vector2.one;
-            textRT.offsetMin = new Vector2(12, 0);
-            textRT.offsetMax = new Vector2(-8, 0);
+            SetAnchors(text.gameObject, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
             
             return container;
         }
         
-        // === SECTION HEADER (smaller) ===
-        public static Text CreateSectionHeader(Transform parent, string name, string title, int fontSize = 14)
+        public static Text CreateSectionHeader(Transform parent, string name, string title, int fontSize = 15)
         {
-            RectTransform container = CreatePanel(parent, name, new Color(0.16f, 0.18f, 0.15f, 0.9f));
-            
-            // Thin left accent
-            RectTransform leftBar = CreatePanel(container, "Accent", GreenAccent);
-            leftBar.anchorMin = new Vector2(0, 0.15f);
-            leftBar.anchorMax = new Vector2(0, 0.85f);
-            leftBar.offsetMin = Vector2.zero;
-            leftBar.offsetMax = new Vector2(2, 0);
-            leftBar.GetComponent<Image>().raycastTarget = false;
-            
-            Text text = CreateText(container, "Text", title, fontSize, TextAnchor.MiddleLeft, GoldAccent);
-            RectTransform textRT = text.GetComponent<RectTransform>();
-            textRT.anchorMin = Vector2.zero;
-            textRT.anchorMax = Vector2.one;
-            textRT.offsetMin = new Vector2(10, 0);
-            textRT.offsetMax = new Vector2(-5, 0);
-            
+            GameObject container = new GameObject(name);
+            container.transform.SetParent(parent, false);
+            RectTransform rect = container.AddComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(0, 32);
+
+            Image img = container.AddComponent<Image>();
+            img.color = GlassOverlay;
+
+            Text text = CreateText(container.transform, "Label", title.ToUpper(), fontSize, TextAnchor.MiddleLeft, Parchment);
+            text.fontStyle = FontStyle.Bold;
+            SetAnchors(text.gameObject, Vector2.zero, Vector2.one, new Vector2(12, 0), new Vector2(-12, 0));
+
             return text;
         }
         
-        // === SEPARATOR — thin clean line ===
         public static RectTransform CreateOrnamentalSeparator(Transform parent)
         {
-            RectTransform rt = CreatePanel(parent, "Separator", new Color(0.30f, 0.32f, 0.28f, 0.5f));
-            return rt;
+            return CreatePanel(parent, "Separator", new Color(0.55f, 0.48f, 0.35f, 0.4f));
         }
 
         // === INPUT FIELD ===
@@ -286,15 +298,15 @@ namespace NapoleonicWars.UI
             go.AddComponent<RectTransform>();
 
             Image img = go.AddComponent<Image>();
-            img.color = new Color(0.10f, 0.11f, 0.10f, 0.95f);
+            img.color = DeepCharcoal;
 
             Outline outline = go.AddComponent<Outline>();
-            outline.effectColor = new Color(0.30f, 0.32f, 0.28f, 0.5f);
+            outline.effectColor = MutedGold;
             outline.effectDistance = new Vector2(1f, 1f);
 
             InputField input = go.AddComponent<InputField>();
 
-            Text text = CreateText(go.transform, "Text", defaultValue, fontSize, TextAnchor.MiddleLeft, TextWhite);
+            Text text = CreateText(go.transform, "Text", defaultValue, fontSize, TextAnchor.MiddleLeft, Porcelain);
             RectTransform textRT = text.GetComponent<RectTransform>();
             textRT.anchorMin = Vector2.zero;
             textRT.anchorMax = Vector2.one;
@@ -303,7 +315,7 @@ namespace NapoleonicWars.UI
             input.textComponent = text;
             input.text = defaultValue;
 
-            Text ph = CreateText(go.transform, "Placeholder", placeholder, fontSize, TextAnchor.MiddleLeft, TextGrey);
+            Text ph = CreateText(go.transform, "Placeholder", placeholder, fontSize, TextAnchor.MiddleLeft, SilverText);
             RectTransform phRT = ph.GetComponent<RectTransform>();
             phRT.anchorMin = Vector2.zero;
             phRT.anchorMax = Vector2.one;
@@ -314,26 +326,29 @@ namespace NapoleonicWars.UI
             return input;
         }
 
-        // === PROGRESS BAR ===
+        // === PROGRESS BAR — Imperial Style ===
         public static (Image bg, Image fill) CreateProgressBar(Transform parent, string name,
             Color fillColor, Color bgColor = default)
         {
-            if (bgColor == default) bgColor = new Color(0.10f, 0.11f, 0.10f, 0.9f);
+            if (bgColor == default) bgColor = DeepCharcoal;
 
             GameObject go = new GameObject(name);
             go.transform.SetParent(parent, false);
-            go.AddComponent<RectTransform>();
+            RectTransform rect = go.AddComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(200, 16);
 
             Image bgImg = go.AddComponent<Image>();
             bgImg.color = bgColor;
+            Outline outline = go.AddComponent<Outline>();
+            outline.effectColor = new Color(0.3f, 0.25f, 0.15f, 0.5f);
 
             GameObject fillGO = new GameObject("Fill");
             fillGO.transform.SetParent(go.transform, false);
             RectTransform fillRT = fillGO.AddComponent<RectTransform>();
             fillRT.anchorMin = Vector2.zero;
             fillRT.anchorMax = new Vector2(1f, 1f);
-            fillRT.offsetMin = new Vector2(1f, 1f);
-            fillRT.offsetMax = new Vector2(-1f, -1f);
+            fillRT.offsetMin = new Vector2(2, 2);
+            fillRT.offsetMax = new Vector2(-2, -2);
             fillRT.pivot = new Vector2(0f, 0.5f);
 
             Image fillImg = fillGO.AddComponent<Image>();
@@ -342,10 +357,9 @@ namespace NapoleonicWars.UI
             return (bgImg, fillImg);
         }
 
-        // === SEPARATOR LINE ===
         public static RectTransform CreateSeparator(Transform parent, Color? color = null)
         {
-            return CreatePanel(parent, "Separator", color ?? new Color(0.30f, 0.32f, 0.28f, 0.4f));
+            return CreatePanel(parent, "Separator", color ?? new Color(0.55f, 0.48f, 0.35f, 0.25f));
         }
 
         // === SCROLL VIEW ===
@@ -356,12 +370,13 @@ namespace NapoleonicWars.UI
             go.AddComponent<RectTransform>();
 
             Image img = go.AddComponent<Image>();
-            img.color = new Color(0f, 0f, 0f, 0.01f);
+            img.color = new Color(0, 0, 0, 0.05f);
 
             ScrollRect scroll = go.AddComponent<ScrollRect>();
             scroll.horizontal = false;
             scroll.vertical = true;
             scroll.movementType = ScrollRect.MovementType.Clamped;
+            scroll.scrollSensitivity = 60f;
 
             // Viewport
             GameObject viewportGO = new GameObject("Viewport");
@@ -373,8 +388,7 @@ namespace NapoleonicWars.UI
             viewportRT.offsetMax = Vector2.zero;
             Image vpImg = viewportGO.AddComponent<Image>();
             vpImg.color = new Color(0, 0, 0, 0.01f);
-            Mask mask = viewportGO.AddComponent<Mask>();
-            mask.showMaskGraphic = false;
+            viewportGO.AddComponent<Mask>().showMaskGraphic = false;
             scroll.viewport = viewportRT;
 
             // Content
@@ -429,7 +443,7 @@ namespace NapoleonicWars.UI
             hlg.childForceExpandWidth = false;
             hlg.childForceExpandHeight = false;
             hlg.spacing = spacing;
-            hlg.padding = padding ?? new RectOffset(4, 4, 2, 2);
+            hlg.padding = padding ?? new RectOffset(12, 12, 4, 4);
             return hlg;
         }
 
@@ -445,7 +459,6 @@ namespace NapoleonicWars.UI
             return le;
         }
 
-        // === RAW IMAGE ===
         public static RawImage CreateRawImage(Transform parent, string name)
         {
             GameObject go = new GameObject(name);
@@ -455,7 +468,6 @@ namespace NapoleonicWars.UI
             return ri;
         }
 
-        // === ANCHOR HELPERS ===
         public static void SetAnchors(GameObject go, Vector2 anchorMin, Vector2 anchorMax, Vector2 offsetMin, Vector2 offsetMax)
         {
             RectTransform rt = go.GetComponent<RectTransform>();
@@ -472,6 +484,288 @@ namespace NapoleonicWars.UI
             rt.anchorMax = anchorMax;
             rt.offsetMin = offsetMin;
             rt.offsetMax = offsetMax;
+        }
+
+        // === PREMIUM VISUAL HELPERS ===
+
+        // Premium color additions
+        public static readonly Color GradientTop = new Color(0.06f, 0.065f, 0.07f, 0.99f);
+        public static readonly Color GradientBottom = new Color(0.10f, 0.105f, 0.11f, 0.99f);
+        public static readonly Color GlowGold = new Color(0.85f, 0.72f, 0.35f, 0.25f);
+        public static readonly Color PremiumSurface = new Color(0.11f, 0.115f, 0.12f, 0.98f);
+        public static readonly Color InnerGlow = new Color(0.77f, 0.63f, 0.35f, 0.08f);
+        public static readonly Color SubtleBorder = new Color(0.25f, 0.23f, 0.20f, 0.6f);
+
+        /// <summary>
+        /// Creates a panel with a simulated vertical gradient using stacked layers.
+        /// Gives premium depth to bars and panels.
+        /// </summary>
+        public static RectTransform CreateGradientPanel(Transform parent, string name, 
+            Color topColor, Color bottomColor, Color? midColor = null)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            RectTransform rt = go.AddComponent<RectTransform>();
+
+            // Base layer (bottom color)
+            Image baseImg = go.AddComponent<Image>();
+            baseImg.color = bottomColor;
+            baseImg.raycastTarget = true;
+
+            // Top gradient overlay (top half, fading down)
+            GameObject topOverlay = new GameObject("GradTop");
+            topOverlay.transform.SetParent(go.transform, false);
+            RectTransform topRT = topOverlay.AddComponent<RectTransform>();
+            topRT.anchorMin = new Vector2(0, 0.35f);
+            topRT.anchorMax = Vector2.one;
+            topRT.offsetMin = Vector2.zero;
+            topRT.offsetMax = Vector2.zero;
+            Image topImg = topOverlay.AddComponent<Image>();
+            topImg.color = topColor;
+            topImg.raycastTarget = false;
+            LayoutElement topLE = topOverlay.AddComponent<LayoutElement>();
+            topLE.ignoreLayout = true;
+
+            // Inner subtle glow (center strip for depth)
+            if (midColor.HasValue)
+            {
+                GameObject midGlow = new GameObject("MidGlow");
+                midGlow.transform.SetParent(go.transform, false);
+                RectTransform midRT = midGlow.AddComponent<RectTransform>();
+                midRT.anchorMin = new Vector2(0, 0.25f);
+                midRT.anchorMax = new Vector2(1, 0.75f);
+                midRT.offsetMin = Vector2.zero;
+                midRT.offsetMax = Vector2.zero;
+                Image midImg = midGlow.AddComponent<Image>();
+                midImg.color = midColor.Value;
+                midImg.raycastTarget = false;
+                LayoutElement midLE = midGlow.AddComponent<LayoutElement>();
+                midLE.ignoreLayout = true;
+            }
+
+            return rt;
+        }
+
+        /// <summary>
+        /// Creates a glowing gold separator — a thin crisp line with a wider semi-transparent glow behind it.
+        /// Much richer than a plain 2px line.
+        /// </summary>
+        public static RectTransform CreateGlowSeparator(Transform parent, string name, 
+            bool vertical = true, Color? glowColor = null, Color? lineColor = null)
+        {
+            Color glow = glowColor ?? GlowGold;
+            Color line = lineColor ?? EmpireGold;
+
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            RectTransform rt = go.AddComponent<RectTransform>();
+
+            if (vertical)
+            {
+                // Outer glow (wide, semi-transparent)
+                Image glowImg = go.AddComponent<Image>();
+                glowImg.color = glow;
+                glowImg.raycastTarget = false;
+
+                // Inner crisp line
+                GameObject lineGO = new GameObject("Line");
+                lineGO.transform.SetParent(go.transform, false);
+                RectTransform lineRT = lineGO.AddComponent<RectTransform>();
+                lineRT.anchorMin = new Vector2(0.3f, 0.1f);
+                lineRT.anchorMax = new Vector2(0.7f, 0.9f);
+                lineRT.offsetMin = Vector2.zero;
+                lineRT.offsetMax = Vector2.zero;
+                Image lineImg = lineGO.AddComponent<Image>();
+                lineImg.color = line;
+                lineImg.raycastTarget = false;
+            }
+            else
+            {
+                // Horizontal glow
+                Image glowImg = go.AddComponent<Image>();
+                glowImg.color = glow;
+                glowImg.raycastTarget = false;
+
+                GameObject lineGO = new GameObject("Line");
+                lineGO.transform.SetParent(go.transform, false);
+                RectTransform lineRT = lineGO.AddComponent<RectTransform>();
+                lineRT.anchorMin = new Vector2(0.05f, 0.3f);
+                lineRT.anchorMax = new Vector2(0.95f, 0.7f);
+                lineRT.offsetMin = Vector2.zero;
+                lineRT.offsetMax = Vector2.zero;
+                Image lineImg = lineGO.AddComponent<Image>();
+                lineImg.color = line;
+                lineImg.raycastTarget = false;
+            }
+
+            return rt;
+        }
+
+        /// <summary>
+        /// Creates a colored icon badge — a small rounded-looking colored background behind an icon.
+        /// Makes resource icons immediately recognizable with their own color identity.
+        /// </summary>
+        public static (GameObject container, Text iconText, Text valueText) CreateIconBadge(
+            Transform parent, string name, string icon, string value, 
+            Color badgeColor, Color textColor, float containerWidth = 150f)
+        {
+            // Container
+            GameObject container = new GameObject(name);
+            container.transform.SetParent(parent, false);
+            RectTransform containerRT = container.AddComponent<RectTransform>();
+            AddLayoutElement(container, preferredWidth: containerWidth, preferredHeight: 44);
+
+            HorizontalLayoutGroup hlg = AddHorizontalLayout(container, 5f, new RectOffset(4, 6, 4, 4));
+            hlg.childControlWidth = false;
+            hlg.childControlHeight = true;
+            hlg.childForceExpandWidth = false;
+            hlg.childAlignment = TextAnchor.MiddleLeft;
+
+            // Icon badge background
+            GameObject badgeBg = new GameObject("BadgeBg");
+            badgeBg.transform.SetParent(container.transform, false);
+            RectTransform badgeBgRT = badgeBg.AddComponent<RectTransform>();
+            AddLayoutElement(badgeBg, preferredWidth: 36, preferredHeight: 36);
+
+            // Outer border (subtle)
+            Image borderImg = badgeBg.AddComponent<Image>();
+            borderImg.color = new Color(badgeColor.r * 0.6f, badgeColor.g * 0.6f, badgeColor.b * 0.6f, 0.5f);
+            borderImg.raycastTarget = false;
+
+            // Inner colored fill
+            GameObject badgeInner = new GameObject("BadgeInner");
+            badgeInner.transform.SetParent(badgeBg.transform, false);
+            RectTransform innerRT = badgeInner.AddComponent<RectTransform>();
+            innerRT.anchorMin = Vector2.zero;
+            innerRT.anchorMax = Vector2.one;
+            innerRT.offsetMin = new Vector2(1, 1);
+            innerRT.offsetMax = new Vector2(-1, -1);
+            Image innerImg = badgeInner.AddComponent<Image>();
+            innerImg.color = new Color(badgeColor.r * 0.25f, badgeColor.g * 0.25f, badgeColor.b * 0.25f, 0.85f);
+            innerImg.raycastTarget = false;
+
+            // Icon text centered on badge
+            Text iconText = CreateText(badgeInner.transform, "Icon", icon, 18, TextAnchor.MiddleCenter, badgeColor);
+            iconText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            RectTransform iconRT = iconText.GetComponent<RectTransform>();
+            iconRT.anchorMin = Vector2.zero;
+            iconRT.anchorMax = Vector2.one;
+            iconRT.offsetMin = Vector2.zero;
+            iconRT.offsetMax = Vector2.zero;
+
+            // Value text
+            Text valueText = CreateText(container.transform, "Value", value, 14, TextAnchor.MiddleLeft, textColor);
+            valueText.fontStyle = FontStyle.Bold;
+            valueText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            AddLayoutElement(valueText.gameObject, preferredWidth: containerWidth - 46, preferredHeight: 44);
+
+            // Subtle shadow on value text for readability
+            Shadow shadow = valueText.gameObject.AddComponent<Shadow>();
+            shadow.effectColor = new Color(0, 0, 0, 0.6f);
+            shadow.effectDistance = new Vector2(1f, -1f);
+
+            return (container, iconText, valueText);
+        }
+
+        /// <summary>
+        /// Creates a premium inset container — a small panel with a subtle double border effect.
+        /// Used for grouping related items in the top/bottom bars.
+        /// </summary>
+        public static RectTransform CreateInsetContainer(Transform parent, string name, Color? bgColor = null)
+        {
+            Color bg = bgColor ?? new Color(0.07f, 0.075f, 0.08f, 0.7f);
+
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            RectTransform rt = go.AddComponent<RectTransform>();
+
+            // Outer subtle border
+            Image borderImg = go.AddComponent<Image>();
+            borderImg.color = SubtleBorder;
+            borderImg.raycastTarget = false;
+
+            // Inner fill
+            GameObject inner = new GameObject("Inner");
+            inner.transform.SetParent(go.transform, false);
+            RectTransform innerRT = inner.AddComponent<RectTransform>();
+            innerRT.anchorMin = Vector2.zero;
+            innerRT.anchorMax = Vector2.one;
+            innerRT.offsetMin = new Vector2(1, 1);
+            innerRT.offsetMax = new Vector2(-1, -1);
+            Image innerImg = inner.AddComponent<Image>();
+            innerImg.color = bg;
+            innerImg.raycastTarget = false;
+
+            return rt;
+        }
+
+        /// <summary>
+        /// Enhanced progress bar with glow effect and inset border.
+        /// </summary>
+        public static (Image bg, Image fill, Image glow) CreatePremiumProgressBar(Transform parent, string name,
+            Color fillColor, float width = 200f, float height = 14f)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            RectTransform rect = go.AddComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(width, height);
+
+            // Outer border
+            Image borderImg = go.AddComponent<Image>();
+            borderImg.color = SubtleBorder;
+
+            // Background inset
+            GameObject bgGO = new GameObject("Bg");
+            bgGO.transform.SetParent(go.transform, false);
+            RectTransform bgRT = bgGO.AddComponent<RectTransform>();
+            bgRT.anchorMin = Vector2.zero;
+            bgRT.anchorMax = Vector2.one;
+            bgRT.offsetMin = new Vector2(1, 1);
+            bgRT.offsetMax = new Vector2(-1, -1);
+            Image bgImg = bgGO.AddComponent<Image>();
+            bgImg.color = new Color(0.04f, 0.04f, 0.05f, 0.9f);
+
+            // Fill
+            GameObject fillGO = new GameObject("Fill");
+            fillGO.transform.SetParent(bgGO.transform, false);
+            RectTransform fillRT = fillGO.AddComponent<RectTransform>();
+            fillRT.anchorMin = Vector2.zero;
+            fillRT.anchorMax = new Vector2(1f, 1f);
+            fillRT.offsetMin = new Vector2(1, 1);
+            fillRT.offsetMax = new Vector2(-1, -1);
+            fillRT.pivot = new Vector2(0f, 0.5f);
+            Image fillImg = fillGO.AddComponent<Image>();
+            fillImg.color = fillColor;
+
+            // Glow overlay on fill (lighter version, half-height centered)
+            GameObject glowGO = new GameObject("Glow");
+            glowGO.transform.SetParent(fillGO.transform, false);
+            RectTransform glowRT = glowGO.AddComponent<RectTransform>();
+            glowRT.anchorMin = new Vector2(0, 0.2f);
+            glowRT.anchorMax = new Vector2(1, 0.6f);
+            glowRT.offsetMin = Vector2.zero;
+            glowRT.offsetMax = Vector2.zero;
+            Image glowImg = glowGO.AddComponent<Image>();
+            glowImg.color = new Color(1f, 1f, 1f, 0.2f);
+            glowImg.raycastTarget = false;
+
+            return (bgImg, fillImg, glowImg);
+        }
+
+        // === INSET CONTAINER (bordered inset panel) ===
+        public static RectTransform CreateInsetContainer(Transform parent, string name, Color bgColor, Color borderColor)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            RectTransform rt = go.AddComponent<RectTransform>();
+            Image bgImg = go.AddComponent<Image>();
+            bgImg.color = bgColor;
+
+            Outline outline = go.AddComponent<Outline>();
+            outline.effectColor = borderColor;
+            outline.effectDistance = new Vector2(1, 1);
+
+            return rt;
         }
     }
 }

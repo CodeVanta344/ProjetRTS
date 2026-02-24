@@ -47,6 +47,12 @@ namespace NapoleonicWars.Campaign
         private Dictionary<string, ArmyMapMarker> armyMarkers = new Dictionary<string, ArmyMapMarker>();
         private GameObject armiesContainer;
         
+        // Logistics convoys & routes
+        private List<GameObject> convoyVisuals = new List<GameObject>();
+        private List<GameObject> routeVisuals = new List<GameObject>();
+        private GameObject convoysContainer;
+        private float convoyAnimTimer = 0f;
+        
         // Selection
         private ArmyMapMarker selectedArmyMarker;
         private ProvinceData selectedTargetProvince;
@@ -151,6 +157,7 @@ namespace NapoleonicWars.Campaign
                     {
                         InitializeCities();
                         InitializeArmies();
+                        InitializeConvoys();
                     }
                     catch (System.Exception e)
                     {
@@ -172,6 +179,7 @@ namespace NapoleonicWars.Campaign
             if (!CityMapMarker.EditMode)
                 HandleInput();
             UpdateArmyPositions();
+            UpdateConvoyAnimation();
         }
         
         private void OnGUI()
@@ -655,7 +663,7 @@ namespace NapoleonicWars.Campaign
             cityGO.transform.SetParent(citiesContainer.transform);
             cityGO.transform.position = worldPos;
             
-            float cityScale = isNationCapital ? 30.0f : 18.0f;
+            float cityScale = isNationCapital ? 60.0f : 40.0f;
             cityGO.transform.localScale = Vector3.one * cityScale;
             
             CityData cityData = campaignManager.GetCityForProvince(province.provinceId);
@@ -720,6 +728,152 @@ namespace NapoleonicWars.Campaign
             }
             if (refreshed > 0)
                 Debug.Log($"[CampaignMap3D] Refreshed {refreshed} city visuals");
+        }
+        
+        // ==================== LOGISTICS CONVOYS & ROUTES ====================
+        
+        private void InitializeConvoys()
+        {
+            if (convoysContainer != null) Destroy(convoysContainer);
+            convoysContainer = new GameObject("ConvoysContainer");
+            convoysContainer.transform.SetParent(transform);
+            RefreshConvoyVisuals();
+        }
+        
+        /// <summary>
+        /// Rebuild all convoy and route visuals on the map.
+        /// Call after turn processing or when convoys change.
+        /// </summary>
+        public void RefreshConvoyVisuals()
+        {
+            // Clear old visuals
+            foreach (var go in convoyVisuals) if (go != null) Destroy(go);
+            foreach (var go in routeVisuals) if (go != null) Destroy(go);
+            convoyVisuals.Clear();
+            routeVisuals.Clear();
+            
+            if (convoysContainer == null)
+            {
+                convoysContainer = new GameObject("ConvoysContainer");
+                convoysContainer.transform.SetParent(transform);
+            }
+            
+            // === Render active convoys ===
+            var allConvoys = LogisticsConvoySystem.GetAllActiveConvoys();
+            foreach (var convoy in allConvoys)
+            {
+                if (convoy.routeProvinces == null || convoy.routeProvinces.Count == 0) continue;
+                
+                // Get world position for current step (lerp between current and next province)
+                Vector3 currentPos = GetConvoyWorldPosition(convoy);
+                
+                // Create 3D visual
+                GameObject visual = ConvoyVisualGenerator.CreateConvoyVisual(convoy, convoy.owner);
+                visual.transform.SetParent(convoysContainer.transform);
+                visual.transform.position = currentPos;
+                visual.transform.localScale = Vector3.one * 40f; // Map scale
+                
+                // Orient towards destination
+                if (convoy.currentStep + 1 < convoy.routeProvinces.Count)
+                {
+                    string nextProv = convoy.routeProvinces[convoy.currentStep + 1];
+                    var provinces = campaignManager.Provinces;
+                    if (provinces.ContainsKey(nextProv))
+                    {
+                        Vector3 nextPos = MapToWorldPosition(provinces[nextProv].mapPosition);
+                        Vector3 dir = nextPos - currentPos;
+                        dir.y = 0;
+                        if (dir.sqrMagnitude > 0.01f)
+                            visual.transform.rotation = Quaternion.LookRotation(dir);
+                    }
+                }
+                
+                convoyVisuals.Add(visual);
+            }
+            
+            // === Render permanent route lines ===
+            var allRoutes = LogisticsConvoySystem.GetAllRoutes();
+            var provinces2 = campaignManager.Provinces;
+            
+            foreach (var route in allRoutes)
+            {
+                if (!route.isActive || route.routePath == null || route.routePath.Count < 2) continue;
+                
+                // Convert province path to world positions
+                List<Vector3> worldPoints = new List<Vector3>();
+                foreach (string provId in route.routePath)
+                {
+                    if (provinces2.ContainsKey(provId))
+                    {
+                        Vector3 wp = MapToWorldPosition(provinces2[provId].mapPosition);
+                        wp.y += 3f; // Slightly above terrain
+                        worldPoints.Add(wp);
+                    }
+                }
+                
+                if (worldPoints.Count >= 2)
+                {
+                    GameObject routeVis = ConvoyVisualGenerator.CreateRouteLineVisual(
+                        worldPoints, route.level, route.isAlliedRoute);
+                    if (routeVis != null)
+                    {
+                        routeVis.transform.SetParent(convoysContainer.transform);
+                        routeVisuals.Add(routeVis);
+                    }
+                }
+            }
+            
+            Debug.Log($"[CampaignMap3D] Rendered {convoyVisuals.Count} convoys, {routeVisuals.Count} route lines");
+        }
+        
+        /// <summary>
+        /// Smoothly animate convoy positions between provinces.
+        /// Called each frame from Update().
+        /// </summary>
+        private void UpdateConvoyAnimation()
+        {
+            convoyAnimTimer += Time.deltaTime;
+            
+            var allConvoys = LogisticsConvoySystem.GetAllActiveConvoys();
+            int i = 0;
+            foreach (var convoy in allConvoys)
+            {
+                if (i >= convoyVisuals.Count) break;
+                GameObject visual = convoyVisuals[i];
+                if (visual == null) { i++; continue; }
+                
+                // Smooth lerp progress (simulate movement between turns)
+                convoy.progressInStep = Mathf.PingPong(convoyAnimTimer * 0.15f, 0.3f);
+                
+                Vector3 targetPos = GetConvoyWorldPosition(convoy);
+                visual.transform.position = Vector3.Lerp(visual.transform.position, targetPos, Time.deltaTime * 2f);
+                
+                // Gentle bobbing
+                float bob = Mathf.Sin(convoyAnimTimer * 2f + i * 1.3f) * 1.5f;
+                visual.transform.position += new Vector3(0, bob, 0);
+                
+                i++;
+            }
+        }
+        
+        private Vector3 GetConvoyWorldPosition(LogisticsConvoy convoy)
+        {
+            var provinces = campaignManager.Provinces;
+            string currentProv = convoy.currentProvinceId;
+            string nextProv = convoy.nextProvinceId;
+            
+            if (!provinces.ContainsKey(currentProv)) return Vector3.zero;
+            
+            Vector3 currentPos = MapToWorldPosition(provinces[currentProv].mapPosition);
+            
+            if (currentProv != nextProv && provinces.ContainsKey(nextProv))
+            {
+                Vector3 nextPos = MapToWorldPosition(provinces[nextProv].mapPosition);
+                currentPos = Vector3.Lerp(currentPos, nextPos, convoy.progressInStep);
+            }
+            
+            currentPos.y = GetTerrainHeight(currentPos.x, currentPos.z) + 8f; // Above terrain
+            return currentPos;
         }
         
         // ==================== ARMIES ====================
@@ -1271,8 +1425,9 @@ namespace NapoleonicWars.Campaign
             glowMat.color = new Color(1f, 0.9f, 0.5f, 0f); // Warm gold, starts invisible
             glowRenderer.material = glowMat;
             
-            // Hide 3D city visuals by default
-            HideCityVisuals();
+            // Info cards hidden by default (shown on hover)
+            if (LinkedLabel != null)
+                LinkedLabel.ShowInfoCards(false);
         }
         
         private void Update()
@@ -1299,10 +1454,9 @@ namespace NapoleonicWars.Campaign
             isHighlighted = h;
             targetGlowAlpha = h ? 0.4f : 0f;
             
-            if (h)
-                ShowCityVisuals();
-            else if (!isDragging)
-                HideCityVisuals();
+            // Buildings stay visible always; only toggle info cards
+            if (LinkedLabel != null)
+                LinkedLabel.ShowInfoCards(h);
         }
         
         private void ShowCityVisuals()

@@ -61,6 +61,8 @@ namespace NapoleonicWars.Campaign
             public string id;
             public string name;
             public string owner;
+            public float mapPosX;
+            public float mapPosY;
             public List<BuildingSaveData> buildings = new List<BuildingSaveData>();
         }
 
@@ -159,7 +161,9 @@ namespace NapoleonicWars.Campaign
                     {
                         id = kvp.Key,
                         name = kvp.Value.provinceName,
-                        owner = kvp.Value.owner.ToString()
+                        owner = kvp.Value.owner.ToString(),
+                        mapPosX = kvp.Value.mapPosition.x,
+                        mapPosY = kvp.Value.mapPosition.y
                     };
 
                     foreach (var slot in kvp.Value.buildings)

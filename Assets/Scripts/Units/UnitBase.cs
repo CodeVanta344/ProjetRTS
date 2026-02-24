@@ -365,6 +365,8 @@ namespace NapoleonicWars.Units
             // Player melee units stay put until ordered — but ranged units auto-fire at targets in range
             if (TeamId == 0)
             {
+                // Player units HOLD POSITION — they only fire if enemy comes within range
+                // They never move from their formation slot
                 if (!cachedIsRanged) return; // Melee units wait for orders
                 
                 // Ranged player units: auto-acquire targets in range but NEVER move
@@ -380,11 +382,12 @@ namespace NapoleonicWars.Units
                 
                 if (targetEnemy != null && IsInAttackRange(targetEnemy))
                 {
+                    // Attack but DON'T move — stay in formation slot
                     currentState = UnitState.Attacking;
                 }
-                else if (targetEnemy != null)
+                else
                 {
-                    // Target exists but out of range — don't chase, just drop target
+                    // Target out of range — just drop it, don't chase
                     targetEnemy = null;
                 }
                 return;
@@ -423,6 +426,14 @@ namespace NapoleonicWars.Units
                 snapPos.z = targetPosition.z;
                 transform.position = snapPos;
                 currentState = UnitState.Idle;
+                
+                // Face regiment direction when arriving at formation slot
+                if (Regiment != null)
+                {
+                    Vector3 regFwd = Regiment.FacingDirection;
+                    if (regFwd.sqrMagnitude > 0.01f)
+                        transform.forward = regFwd;
+                }
                 return;
             }
 
@@ -440,7 +451,21 @@ namespace NapoleonicWars.Units
             transform.position = pos;
 
             Vector3 dir = new Vector3(dirX, 0f, dirZ);
-            transform.forward = Vector3.Lerp(transform.forward, dir, dt * 3f);
+            
+            // Face regiment direction while moving (maintains formation cohesion)
+            // Only use individual direction if no regiment or regiment isn't moving
+            if (Regiment != null)
+            {
+                Vector3 regFwd = Regiment.FacingDirection;
+                if (regFwd.sqrMagnitude > 0.01f)
+                    transform.forward = Vector3.Lerp(transform.forward, regFwd, dt * 5f);
+                else
+                    transform.forward = Vector3.Lerp(transform.forward, dir, dt * 3f);
+            }
+            else
+            {
+                transform.forward = Vector3.Lerp(transform.forward, dir, dt * 3f);
+            }
 
             // Snap to terrain height — needs to be frequent for smooth movement
             terrainSnapTimer -= dt;
@@ -566,7 +591,15 @@ namespace NapoleonicWars.Units
                     return;
                 }
                 
-                // Melee-only units can chase their target
+                // === PLAYER MELEE UNITS: Hold formation, don't chase ===
+                if (TeamId == 0)
+                {
+                    targetEnemy = null;
+                    currentState = UnitState.Idle;
+                    return;
+                }
+                
+                // AI melee units can chase their target
                 targetPosition = targetEnemy.transform.position;
                 currentState = UnitState.Moving;
                 return;

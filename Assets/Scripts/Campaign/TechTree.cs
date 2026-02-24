@@ -29,6 +29,10 @@ namespace NapoleonicWars.Campaign
         public int turnsToResearch;
         public string[] prerequisites;  // Tech IDs required before this can be researched
 
+        // Resource costs (paid upfront to START research)
+        public int ironCost;            // Iron required to start
+        public int foodCost;            // Food required to start
+
         // Bonuses
         public float accuracyBonus;
         public float moraleBonus;
@@ -59,6 +63,9 @@ namespace NapoleonicWars.Campaign
             this.researchCost = cost;
             this.turnsToResearch = turns;
             this.prerequisites = new string[0];
+            // Default resource costs scale with gold cost
+            this.ironCost = cost / 4;
+            this.foodCost = cost / 3;
         }
     }
 
@@ -424,9 +431,10 @@ namespace NapoleonicWars.Campaign
             Register(congressSystem);
 
             var espionageNetwork = new Technology("espionage_network", "Espionage Network",
-                "Intelligence operations. See enemy movements.",
+                "Intelligence operations. See enemy movements. Trade intel boosts income.",
                 TechCategory.Diplomacy, 700, 4)
-            { prerequisites = new[] { "ambassadors" } };
+            { goldIncomeBonus = 0.10f, diplomacyBonus = 15f,
+              prerequisites = new[] { "ambassadors" } };
             Register(espionageNetwork);
 
             // ============================================================================
@@ -559,9 +567,10 @@ namespace NapoleonicWars.Campaign
             Register(balanceOfPower);
 
             var codeSystem = new Technology("code_system", "Diplomatic Codes",
-                "Secure diplomatic communications. Intelligence advantage.",
+                "Secure diplomatic communications. Battle intel grants +15% accuracy.",
                 TechCategory.Diplomacy, 700, 4)
-            { prerequisites = new[] { "espionage_network" } };
+            { accuracyBonus = 0.15f, diplomacyBonus = 20f,
+              prerequisites = new[] { "espionage_network" } };
             Register(codeSystem);
 
             // ============================================================================
@@ -689,9 +698,10 @@ namespace NapoleonicWars.Campaign
             Register(greatPowerPolitics);
 
             var intelligenceAgency = new Technology("intelligence_agency", "Intelligence Agency",
-                "Professional spy network. Complete intelligence dominance.",
+                "Professional spy network. Strategic intel dominance. Economic & combat edge.",
                 TechCategory.Diplomacy, 900, 6)
-            { prerequisites = new[] { "code_system", "espionage_network" } };
+            { goldIncomeBonus = 0.20f, damageBonus = 0.10f, diplomacyBonus = 30f,
+              prerequisites = new[] { "code_system", "espionage_network" } };
             Register(intelligenceAgency);
 
             // ============================================================================
@@ -725,28 +735,32 @@ namespace NapoleonicWars.Campaign
 
             // Naval Tech (for future expansion)
             var shipOfTheLine = new Technology("ship_of_the_line", "Ship of the Line",
-                "Mighty wooden walls. Basic naval power.",
+                "Mighty wooden walls. Naval trade income and morale projection.",
                 TechCategory.Military, 1000, 5)
-            { prerequisites = new[] { "national_bank" } };
+            { goldIncomeBonus = 0.15f, moraleBonus = 10f,
+              prerequisites = new[] { "national_bank" } };
             Register(shipOfTheLine);
 
             var steamShips = new Technology("steam_ships", "Steam Warships",
-                "Ironclad steam vessels. Modern naval power.",
+                "Ironclad steam vessels. Trade dominance, logistics boost.",
                 TechCategory.Military, 1500, 7)
-            { prerequisites = new[] { "ship_of_the_line", "steel_industry" } };
+            { goldIncomeBonus = 0.25f, speedBonus = 0.10f, ironBonus = 0.15f,
+              prerequisites = new[] { "ship_of_the_line", "steel_industry" } };
             Register(steamShips);
 
             // Special Fortifications
             var starForts = new Technology("star_forts", "Star Fort Design",
-                "Bastion trace italienne. +30% fortification strength.",
+                "Bastion trace italienne. Garrison confidence & efficiency.",
                 TechCategory.Military, 800, 5)
-            { prerequisites = new[] { "defensive_positions" } };
+            { moraleBonus = 15f, maintenanceReduction = 0.10f,
+              prerequisites = new[] { "defensive_positions" } };
             Register(starForts);
 
             var polygonalForts = new Technology("polygonal_forts", "Polygonal Forts",
-                "Modern fortress design. +40% fortification strength.",
+                "Modern fortress design. Fortress artillery & garrison efficiency.",
                 TechCategory.Military, 1200, 6)
-            { prerequisites = new[] { "star_forts", "indirect_fire" } };
+            { moraleBonus = 25f, maintenanceReduction = 0.15f, damageBonus = 0.10f,
+              prerequisites = new[] { "star_forts", "indirect_fire" } };
             Register(polygonalForts);
 
             Debug.Log($"[TechTree] Initialized with {allTechs.Count} technologies");
@@ -825,9 +839,17 @@ namespace NapoleonicWars.Campaign
             if (!CanResearch(techId)) return false;
 
             Technology tech = allTechs[techId];
-            if (!faction.CanAfford(tech.researchCost)) return false;
 
-            faction.Spend(tech.researchCost);
+            // Check all resource costs
+            if (faction.gold < tech.researchCost) return false;
+            if (faction.iron < tech.ironCost) return false;
+            if (faction.food < tech.foodCost) return false;
+
+            // Consume resources
+            faction.gold -= tech.researchCost;
+            faction.iron -= tech.ironCost;
+            faction.food -= tech.foodCost;
+
             currentResearchId = techId;
 
             researchStates[techId] = new TechResearchState
@@ -837,7 +859,7 @@ namespace NapoleonicWars.Campaign
                 completed = false
             };
 
-            Debug.Log($"[TechTree] Started researching: {tech.name} ({tech.turnsToResearch} turns)");
+            Debug.Log($"[TechTree] Started researching: {tech.name} ({tech.turnsToResearch} turns, cost: {tech.researchCost}g + {tech.ironCost} iron + {tech.foodCost} food)");
             return true;
         }
 
