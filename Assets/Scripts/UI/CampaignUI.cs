@@ -1201,7 +1201,7 @@ namespace NapoleonicWars.UI
         {
             // Main panel — right side, large, ornate with gold border
             RectTransform panel = UIFactory.CreateBorderedPanel(canvas.transform, "CityPanel", 
-                new Color(0.06f, 0.06f, 0.07f, 0.97f), UIFactory.MutedGold, 2f);
+                UIFactory.DeepCharcoal, UIFactory.BorderGold, 1.5f);
             panel.anchorMin = new Vector2(0.58f, 0.06f);
             panel.anchorMax = new Vector2(0.99f, 0.94f);
             panel.offsetMin = Vector2.zero;
@@ -1219,7 +1219,7 @@ namespace NapoleonicWars.UI
             
             // === PREMIUM HEADER BANNER ===
             RectTransform headerBg = UIFactory.CreateGradientPanel(panel, "HeaderBanner",
-                new Color(0.14f, 0.12f, 0.10f), new Color(0.06f, 0.06f, 0.07f));
+                new Color(0.12f, 0.11f, 0.09f), UIFactory.DeepCharcoal);
             UIFactory.AddLayoutElement(headerBg.gameObject, preferredHeight: 56);
             
             UIFactory.AddHorizontalLayout(headerBg.gameObject, 10f, new RectOffset(16, 12, 8, 8));
@@ -1246,7 +1246,7 @@ namespace NapoleonicWars.UI
             Button closeBtn = UIFactory.CreateButton(headerBg, "CloseBtn", "✕", 16,
                 () => CloseCityPanel());
             UIFactory.AddLayoutElement(closeBtn.gameObject, preferredWidth: 32, preferredHeight: 32);
-            closeBtn.GetComponent<Image>().color = new Color(0.3f, 0.1f, 0.1f, 0.8f);
+            closeBtn.GetComponent<Image>().color = new Color(0.25f, 0.06f, 0.06f, 0.85f);
             
             // Gold separator line under header
             RectTransform hSep = UIFactory.CreateGlowSeparator(panel, "HeaderSep", false);
@@ -1257,8 +1257,8 @@ namespace NapoleonicWars.UI
             tabBar.transform.SetParent(panel, false);
             tabBar.AddComponent<RectTransform>();
             Image tabBarBg = tabBar.AddComponent<Image>();
-            tabBarBg.color = new Color(0.05f, 0.05f, 0.06f, 1f);
-            UIFactory.AddHorizontalLayout(tabBar, 2f, new RectOffset(6, 6, 4, 4));
+            tabBarBg.color = new Color(0.04f, 0.04f, 0.05f, 1f);
+            UIFactory.AddHorizontalLayout(tabBar, 1f, new RectOffset(4, 4, 3, 3));
             UIFactory.AddLayoutElement(tabBar, preferredHeight: 36);
             
             string[] tabNames = { "⚜ VUE", "🏗 BÂTIMENTS", "⚔ MILITAIRE", "🏭 INDUSTRIE" };
@@ -1345,8 +1345,8 @@ namespace NapoleonicWars.UI
                 bool isActive = (t == activeCityTab);
                 Image tabImg = cityTabButtons[t].GetComponent<Image>();
                 tabImg.color = isActive 
-                    ? new Color(0.18f, 0.14f, 0.08f, 1f)  // warm amber bg
-                    : new Color(0.08f, 0.08f, 0.09f, 1f); // dark bg
+                    ? new Color(0.14f, 0.12f, 0.07f, 1f)  // warm dark amber
+                    : new Color(0.05f, 0.05f, 0.06f, 1f); // near-black
                 
                 Text txt = cityTabButtons[t].GetComponentInChildren<Text>();
                 if (txt != null)
@@ -1612,7 +1612,7 @@ namespace NapoleonicWars.UI
                         
                         if (slot.isConstructing)
                         {
-                            rowBg.color = new Color(0.12f, 0.10f, 0.06f, 1f); // warm construction bg
+                            rowBg.color = new Color(0.08f, 0.07f, 0.05f, 0.95f); // warm dark construction bg
                             
                             GameObject leftC = new GameObject("Left");
                             leftC.transform.SetParent(row.transform, false);
@@ -1631,7 +1631,7 @@ namespace NapoleonicWars.UI
                         }
                         else
                         {
-                            rowBg.color = new Color(0.09f, 0.09f, 0.10f, 1f);
+                            rowBg.color = new Color(0.06f, 0.065f, 0.07f, 0.95f);
                             
                             // Icon
                             Text iconTxt = UIFactory.CreateText(row.transform, "Icon", icon, 18, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
