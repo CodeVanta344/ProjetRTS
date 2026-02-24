@@ -1,32 +1,42 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections.Generic;
+using System.Text;
 
 namespace NapoleonicWars.Campaign
 {
     /// <summary>
-    /// Clean floating city name label — city name, building icon row, and city level info.
-    /// Billboards toward camera, scales with distance.
+    /// Floating city label with compact info cards showing key stats at a glance.
+    /// Layout: City Name on top, then a row of small colored cards below.
+    /// Cards show: Level, Population, Income, Garrison, Specialization, Buildings.
     /// </summary>
     public class CityNameLabel : MonoBehaviour
     {
         private Text nameText;
-        private Text buildingIconsText;
-        private Text cityInfoText;
+        private Text cardsText;
         private Canvas labelCanvas;
         private RectTransform canvasRect;
         
         private float baseScale = 0.12f;
         private float maxDistance = 4000f;
         private Camera mainCamera;
-        private Vector3 offset = new Vector3(0f, 20f, 0f);
+        private Vector3 offset = new Vector3(0f, 25f, 0f);
         private bool isCapitalLabel;
-        private Outline outline;
-        private Shadow shadow;
+        private Outline nameOutline;
         
         // Cached references for refresh
         private CityData linkedCityData;
         private bool isPlayerFaction;
+        
+        // Card colors
+        private static readonly string COL_GOLD = "#FFD700";
+        private static readonly string COL_GREEN = "#7FDB7F";
+        private static readonly string COL_BLUE = "#7FB3FF";
+        private static readonly string COL_RED = "#FF7F7F";
+        private static readonly string COL_PURPLE = "#C09FFF";
+        private static readonly string COL_ORANGE = "#FFB366";
+        private static readonly string COL_GRAY = "#B0B0B0";
+        private static readonly string COL_WHITE = "#EEEEDD";
         
         public void Initialize(string cityName, string subInfo, bool isCapital, bool isPlayerFaction)
         {
@@ -34,156 +44,200 @@ namespace NapoleonicWars.Campaign
             isCapitalLabel = isCapital;
             this.isPlayerFaction = isPlayerFaction;
             
-            // Canvas
+            // Canvas — wider to fit cards
             GameObject canvasGO = new GameObject("LabelCanvas");
             canvasGO.transform.SetParent(transform);
             labelCanvas = canvasGO.AddComponent<Canvas>();
             labelCanvas.renderMode = RenderMode.WorldSpace;
             
             canvasRect = canvasGO.GetComponent<RectTransform>();
-            canvasRect.sizeDelta = new Vector2(400, 90); // Taller for 3 lines
+            canvasRect.sizeDelta = new Vector2(600, 120);
             canvasRect.localScale = Vector3.one * baseScale;
             
-            // === LINE 1: City Name ===
+            // === CITY NAME ===
             GameObject nameGO = new GameObject("NameText");
             nameGO.transform.SetParent(canvasGO.transform, false);
             nameText = nameGO.AddComponent<Text>();
             nameText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            nameText.fontSize = isCapital ? 28 : 20;
+            nameText.fontSize = isCapital ? 32 : 22;
             nameText.fontStyle = isCapital ? FontStyle.Bold : FontStyle.Normal;
             nameText.alignment = TextAnchor.MiddleCenter;
             nameText.horizontalOverflow = HorizontalWrapMode.Overflow;
             nameText.verticalOverflow = VerticalWrapMode.Overflow;
             nameText.raycastTarget = false;
+            nameText.supportRichText = true;
             
-            // Color: gold for capital, white for player cities, soft red for enemy
+            // Color: gold for capital, white for player, soft red for enemy
             if (isCapital)
-                nameText.color = new Color(1f, 0.85f, 0.3f); // Warm gold
+                nameText.color = new Color(1f, 0.85f, 0.3f);
             else if (isPlayerFaction)
-                nameText.color = new Color(0.95f, 0.95f, 0.9f); // Soft white
+                nameText.color = new Color(0.95f, 0.95f, 0.9f);
             else
-                nameText.color = new Color(0.95f, 0.45f, 0.35f); // Soft red
+                nameText.color = new Color(0.95f, 0.45f, 0.35f);
             
-            // Build display text
-            if (isCapital && !string.IsNullOrEmpty(subInfo))
-                nameText.text = $"★ {cityName}";
-            else
-                nameText.text = cityName;
+            string displayName = cityName;
+            if (isCapital) displayName = $"★ {cityName} ★";
+            nameText.text = displayName;
             
-            // Position: top third of canvas
+            // Position: top part of canvas
             RectTransform nameRect = nameGO.GetComponent<RectTransform>();
-            nameRect.anchorMin = new Vector2(0f, 0.6f);
+            nameRect.anchorMin = new Vector2(0f, 0.55f);
             nameRect.anchorMax = new Vector2(1f, 1f);
             nameRect.offsetMin = Vector2.zero;
             nameRect.offsetMax = Vector2.zero;
             
-            // Black outline for readability on any background
-            outline = nameGO.AddComponent<Outline>();
-            outline.effectColor = new Color(0f, 0f, 0f, 0.9f);
-            outline.effectDistance = new Vector2(1.5f, -1.5f);
+            // Outline for readability
+            nameOutline = nameGO.AddComponent<Outline>();
+            nameOutline.effectColor = new Color(0f, 0f, 0f, 0.9f);
+            nameOutline.effectDistance = new Vector2(1.5f, -1.5f);
             
-            // Additional shadow for depth
-            shadow = nameGO.AddComponent<Shadow>();
-            shadow.effectColor = new Color(0f, 0f, 0f, 0.7f);
-            shadow.effectDistance = new Vector2(2f, -2f);
+            var nameShadow = nameGO.AddComponent<Shadow>();
+            nameShadow.effectColor = new Color(0f, 0f, 0f, 0.7f);
+            nameShadow.effectDistance = new Vector2(2f, -2f);
             
-            // === LINE 2: Building Icons ===
-            GameObject iconsGO = new GameObject("BuildingIcons");
-            iconsGO.transform.SetParent(canvasGO.transform, false);
-            buildingIconsText = iconsGO.AddComponent<Text>();
-            buildingIconsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            buildingIconsText.fontSize = 14;
-            buildingIconsText.alignment = TextAnchor.MiddleCenter;
-            buildingIconsText.horizontalOverflow = HorizontalWrapMode.Overflow;
-            buildingIconsText.verticalOverflow = VerticalWrapMode.Overflow;
-            buildingIconsText.raycastTarget = false;
-            buildingIconsText.color = new Color(0.9f, 0.85f, 0.7f, 0.9f);
-            buildingIconsText.text = "";
+            // === INFO CARDS ROW ===
+            GameObject cardsGO = new GameObject("InfoCards");
+            cardsGO.transform.SetParent(canvasGO.transform, false);
+            cardsText = cardsGO.AddComponent<Text>();
+            cardsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            cardsText.fontSize = 14;
+            cardsText.alignment = TextAnchor.MiddleCenter;
+            cardsText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            cardsText.verticalOverflow = VerticalWrapMode.Overflow;
+            cardsText.raycastTarget = false;
+            cardsText.supportRichText = true;
+            cardsText.color = Color.white;
+            cardsText.text = "";
             
-            RectTransform iconsRect = iconsGO.GetComponent<RectTransform>();
-            iconsRect.anchorMin = new Vector2(0f, 0.3f);
-            iconsRect.anchorMax = new Vector2(1f, 0.6f);
-            iconsRect.offsetMin = Vector2.zero;
-            iconsRect.offsetMax = Vector2.zero;
+            RectTransform cardsRect = cardsGO.GetComponent<RectTransform>();
+            cardsRect.anchorMin = new Vector2(0f, 0f);
+            cardsRect.anchorMax = new Vector2(1f, 0.52f);
+            cardsRect.offsetMin = Vector2.zero;
+            cardsRect.offsetMax = Vector2.zero;
             
-            var iconsOutline = iconsGO.AddComponent<Outline>();
-            iconsOutline.effectColor = new Color(0f, 0f, 0f, 0.85f);
-            iconsOutline.effectDistance = new Vector2(1f, -1f);
+            var cardsOutline = cardsGO.AddComponent<Outline>();
+            cardsOutline.effectColor = new Color(0f, 0f, 0f, 0.9f);
+            cardsOutline.effectDistance = new Vector2(1f, -1f);
             
-            // === LINE 3: City Level & Population ===
-            GameObject infoGO = new GameObject("CityInfo");
-            infoGO.transform.SetParent(canvasGO.transform, false);
-            cityInfoText = infoGO.AddComponent<Text>();
-            cityInfoText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            cityInfoText.fontSize = 12;
-            cityInfoText.alignment = TextAnchor.MiddleCenter;
-            cityInfoText.horizontalOverflow = HorizontalWrapMode.Overflow;
-            cityInfoText.verticalOverflow = VerticalWrapMode.Overflow;
-            cityInfoText.raycastTarget = false;
-            cityInfoText.color = new Color(0.7f, 0.7f, 0.65f, 0.8f);
-            cityInfoText.text = "";
-            
-            RectTransform infoRect = infoGO.GetComponent<RectTransform>();
-            infoRect.anchorMin = new Vector2(0f, 0f);
-            infoRect.anchorMax = new Vector2(1f, 0.3f);
-            infoRect.offsetMin = Vector2.zero;
-            infoRect.offsetMax = Vector2.zero;
-            
-            var infoOutline = infoGO.AddComponent<Outline>();
-            infoOutline.effectColor = new Color(0f, 0f, 0f, 0.8f);
-            infoOutline.effectDistance = new Vector2(1f, -1f);
+            var cardsShadow = cardsGO.AddComponent<Shadow>();
+            cardsShadow.effectColor = new Color(0f, 0f, 0f, 0.6f);
+            cardsShadow.effectDistance = new Vector2(1.5f, -1.5f);
         }
         
         /// <summary>
-        /// Link city data and refresh building icons + city info line.
+        /// Refresh info cards from city data. Called when city data changes.
         /// </summary>
         public void RefreshFromCityData(CityData cityData)
         {
             linkedCityData = cityData;
-            if (cityData == null) return;
+            if (cityData == null || cardsText == null) return;
             
-            // === Building Icons ===
-            string icons = BuildBuildingIconRow(cityData);
-            if (buildingIconsText != null)
-                buildingIconsText.text = icons;
+            var sb = new StringBuilder();
             
-            // === City Info ===
-            string popStr = FormatPopulation(cityData.population);
+            // Card 1: Level
             string levelName = CityLevelThresholds.GetLevelName(cityData.cityLevel);
-            if (cityInfoText != null)
-                cityInfoText.text = $"Lv.{cityData.cityLevel} {levelName} — {popStr}";
-        }
-        
-        /// <summary>
-        /// Build a compact icon string from constructed and constructing buildings.
-        /// Constructed = bright icon, Constructing = dimmed with parentheses.
-        /// </summary>
-        private string BuildBuildingIconRow(CityData cityData)
-        {
-            if (cityData.buildings == null || cityData.buildings.Count == 0) return "";
+            sb.Append($"<color={COL_GOLD}>⚜Lv.{cityData.cityLevel}</color> ");
             
-            var iconParts = new List<string>();
+            // Card 2: Population
+            string popStr = FormatPopulation(cityData.population);
+            sb.Append($"<color={COL_GREEN}>♟{popStr}</color> ");
             
-            foreach (var bld in cityData.buildings)
+            // Card 3: Income
+            int income = EstimateIncome(cityData);
+            sb.Append($"<color={COL_ORANGE}>💰{income}</color> ");
+            
+            // Card 4: Garrison  
+            int garrison = EstimateGarrison(cityData);
+            if (garrison > 0)
+                sb.Append($"<color={COL_RED}>⚔{garrison}</color> ");
+            
+            // Card 5: Buildings count
+            int builtCount = 0;
+            int buildingCount = 0;
+            if (cityData.buildings != null)
             {
-                string icon = BuildingInfo.GetIcon(bld.buildingType);
-                if (bld.isConstructed)
+                foreach (var b in cityData.buildings)
                 {
-                    // Show level if > 1
-                    if (bld.level > 1)
-                        iconParts.Add($"{icon}{bld.level}");
-                    else
-                        iconParts.Add(icon);
-                }
-                else if (bld.isConstructing)
-                {
-                    // Dimmed: wrap with brackets
-                    iconParts.Add($"<color=#888>[{icon}]</color>");
+                    if (b.isConstructed) builtCount++;
+                    else if (b.isConstructing) buildingCount++;
                 }
             }
+            if (builtCount > 0 || buildingCount > 0)
+            {
+                sb.Append($"<color={COL_BLUE}>🏛{builtCount}</color>");
+                if (buildingCount > 0)
+                    sb.Append($"<color={COL_GRAY}>+{buildingCount}</color>");
+                sb.Append(" ");
+            }
             
-            return string.Join(" ", iconParts);
+            // Card 6: Specialization
+            if (cityData.specialization != CitySpecialization.None)
+            {
+                string specIcon = GetSpecIcon(cityData.specialization);
+                string specName = GetSpecShortName(cityData.specialization);
+                sb.Append($"<color={COL_PURPLE}>{specIcon}{specName}</color>");
+            }
+            
+            cardsText.text = sb.ToString();
         }
+        
+        private int EstimateIncome(CityData city)
+        {
+            // Base income from population + buildings
+            int income = city.population / 500;
+            if (city.buildings != null)
+            {
+                foreach (var b in city.buildings)
+                {
+                    if (b.isConstructed)
+                        income += b.level * 5;
+                }
+            }
+            return income;
+        }
+        
+        private int EstimateGarrison(CityData city)
+        {
+            if (city.buildings == null) return 0;
+            int garrison = 0;
+            foreach (var b in city.buildings)
+            {
+                if (b.isConstructed && (b.buildingType == BuildingType.Barracks || 
+                    b.buildingType == BuildingType.Fortress ||
+                    b.buildingType == BuildingType.VillageBarracks ||
+                    b.buildingType == BuildingType.ProvincialBarracks))
+                    garrison += b.level * 500;
+            }
+            return garrison;
+        }
+        
+        private string GetSpecIcon(CitySpecialization spec) => spec switch
+        {
+            CitySpecialization.Agriculture => "🌾",
+            CitySpecialization.Industry => "⚒",
+            CitySpecialization.Commerce => "💎",
+            CitySpecialization.Military => "⚔",
+            CitySpecialization.Mining => "⛏",
+            CitySpecialization.Fishing => "🐟",
+            CitySpecialization.Forestry => "🌲",
+            CitySpecialization.Port => "⚓",
+            CitySpecialization.University => "📖",
+            _ => "•"
+        };
+        
+        private string GetSpecShortName(CitySpecialization spec) => spec switch
+        {
+            CitySpecialization.Agriculture => "Agri",
+            CitySpecialization.Industry => "Ind",
+            CitySpecialization.Commerce => "Com",
+            CitySpecialization.Military => "Mil",
+            CitySpecialization.Mining => "Mine",
+            CitySpecialization.Fishing => "Fish",
+            CitySpecialization.Forestry => "Wood",
+            CitySpecialization.Port => "Port",
+            CitySpecialization.University => "Univ",
+            _ => ""
+        };
         
         private string FormatPopulation(int pop)
         {
@@ -206,7 +260,7 @@ namespace NapoleonicWars.Campaign
             
             // Scale with distance so text stays readable
             float distance = Vector3.Distance(mainCamera.transform.position, transform.position);
-            float scale = Mathf.Clamp(distance * 0.0008f, baseScale * 0.6f, baseScale * 3f);
+            float scale = Mathf.Clamp(distance * 0.001f, baseScale * 0.6f, baseScale * 4f);
             canvasRect.localScale = Vector3.one * scale;
             
             // Fade at extremes
@@ -214,10 +268,10 @@ namespace NapoleonicWars.Campaign
             if (distance > maxDistance * 0.75f)
                 alpha = 1f - Mathf.InverseLerp(maxDistance * 0.75f, maxDistance, distance);
             
-            // Fade building icons and info at closer zoom (they appear only when close enough)
-            float detailAlpha = alpha;
-            if (distance > maxDistance * 0.5f)
-                detailAlpha = 1f - Mathf.InverseLerp(maxDistance * 0.5f, maxDistance * 0.75f, distance);
+            // Cards fade at farther distance (name stays visible longer)
+            float cardsAlpha = alpha;
+            if (distance > maxDistance * 0.4f)
+                cardsAlpha = 1f - Mathf.InverseLerp(maxDistance * 0.4f, maxDistance * 0.7f, distance);
             
             if (nameText != null)
             {
@@ -225,23 +279,17 @@ namespace NapoleonicWars.Campaign
                 c.a = alpha;
                 nameText.color = c;
             }
-            if (outline != null)
+            if (nameOutline != null)
             {
-                Color c = outline.effectColor;
+                Color c = nameOutline.effectColor;
                 c.a = alpha * 0.9f;
-                outline.effectColor = c;
+                nameOutline.effectColor = c;
             }
-            if (buildingIconsText != null)
+            if (cardsText != null)
             {
-                Color c = buildingIconsText.color;
-                c.a = detailAlpha * 0.9f;
-                buildingIconsText.color = c;
-            }
-            if (cityInfoText != null)
-            {
-                Color c = cityInfoText.color;
-                c.a = detailAlpha * 0.8f;
-                cityInfoText.color = c;
+                Color c = cardsText.color;
+                c.a = cardsAlpha;
+                cardsText.color = c;
             }
         }
         

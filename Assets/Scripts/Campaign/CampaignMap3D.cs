@@ -654,7 +654,7 @@ namespace NapoleonicWars.Campaign
             cityGO.transform.SetParent(citiesContainer.transform);
             cityGO.transform.position = worldPos;
             
-            float cityScale = isNationCapital ? 10.0f : 8.0f;
+            float cityScale = isNationCapital ? 30.0f : 18.0f;
             cityGO.transform.localScale = Vector3.one * cityScale;
             
             CityData cityData = campaignManager.GetCityForProvince(province.provinceId);
