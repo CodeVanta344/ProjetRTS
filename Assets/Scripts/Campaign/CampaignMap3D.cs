@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using UnityEngine.EventSystems;
 using System.Collections.Generic;
 using System.Linq;
 using NapoleonicWars.Campaign;
@@ -832,6 +833,8 @@ namespace NapoleonicWars.Campaign
         private void HandleInput()
         {
             if (mainCamera == null || campaignManager == null) return;
+            // Don't process map clicks when mouse is over UI (prevents click-through to map)
+            if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
             if (Input.GetMouseButtonDown(0))
             {
                 Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
@@ -1226,7 +1229,17 @@ namespace NapoleonicWars.Campaign
         public ProvinceData ProvinceData { get; private set; }
         public CampaignMap3D Map { get; private set; }
         public CityNameLabel LinkedLabel { get; set; }
-        private GameObject highlightObject;
+        
+        // Hover overlay
+        private GameObject glowRing;
+        private Renderer glowRenderer;
+        private Material glowMat;
+        private float glowAlpha = 0f;
+        private float targetGlowAlpha = 0f;
+        
+        // City visual references
+        private CityDevelopmentVisuals devVisuals;
+        
         private bool isHighlighted;
         private bool isDragging;
         private Camera dragCamera;
@@ -1234,26 +1247,102 @@ namespace NapoleonicWars.Campaign
         public void Initialize(ProvinceData province, CampaignMap3D map)
         {
             ProvinceData = province; Map = map;
-            highlightObject = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            highlightObject.name = "Highlight";
-            highlightObject.transform.SetParent(transform);
-            highlightObject.transform.localPosition = new Vector3(0f, 0.3f, 0f);
-            highlightObject.transform.localScale = new Vector3(2.5f, 0.05f, 2.5f);
-            Renderer r = highlightObject.GetComponent<Renderer>();
-            Material m = new Material(Shader.Find("Universal Render Pipeline/Simple Lit"));
-            m.color = Color.yellow; r.material = m;
-            Destroy(highlightObject.GetComponent<Collider>());
-            highlightObject.SetActive(false);
+            devVisuals = GetComponent<CityDevelopmentVisuals>();
+            
+            // Create a subtle glow ring (flat disc)
+            glowRing = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            glowRing.name = "GlowRing";
+            glowRing.transform.SetParent(transform);
+            glowRing.transform.localPosition = new Vector3(0f, 0.1f, 0f);
+            glowRing.transform.localScale = new Vector3(3.0f, 0.02f, 3.0f);
+            Destroy(glowRing.GetComponent<Collider>());
+            
+            // Transparent glow material
+            glowRenderer = glowRing.GetComponent<Renderer>();
+            glowMat = new Material(Shader.Find("Universal Render Pipeline/Simple Lit"));
+            glowMat.SetFloat("_Surface", 1); // Transparent
+            glowMat.SetFloat("_Blend", 0);
+            glowMat.SetOverrideTag("RenderType", "Transparent");
+            glowMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            glowMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            glowMat.SetInt("_ZWrite", 0);
+            glowMat.renderQueue = 3000;
+            glowMat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            glowMat.color = new Color(1f, 0.9f, 0.5f, 0f); // Warm gold, starts invisible
+            glowRenderer.material = glowMat;
+            
+            // Hide 3D city visuals by default
+            HideCityVisuals();
+        }
+        
+        private void Update()
+        {
+            // Smooth fade the glow ring
+            glowAlpha = Mathf.Lerp(glowAlpha, targetGlowAlpha, Time.deltaTime * 8f);
+            if (glowMat != null)
+            {
+                Color c = glowMat.color;
+                c.a = glowAlpha;
+                glowMat.color = c;
+            }
+            
+            // Pulse effect when highlighted
+            if (isHighlighted && glowRing != null)
+            {
+                float pulse = 1f + Mathf.Sin(Time.time * 3f) * 0.15f;
+                glowRing.transform.localScale = new Vector3(3.0f * pulse, 0.02f, 3.0f * pulse);
+            }
         }
         
         public void SetHighlighted(bool h)
         {
             isHighlighted = h;
-            if (highlightObject != null) highlightObject.SetActive(h);
+            targetGlowAlpha = h ? 0.4f : 0f;
+            
+            if (h)
+                ShowCityVisuals();
+            else if (!isDragging)
+                HideCityVisuals();
+        }
+        
+        private void ShowCityVisuals()
+        {
+            // Show the 3D city buildings
+            if (devVisuals != null && devVisuals.transform.childCount > 0)
+            {
+                foreach (Transform child in devVisuals.transform)
+                {
+                    if (child.name != "GlowRing" && child.gameObject != glowRing)
+                        child.gameObject.SetActive(true);
+                }
+            }
+            
+            // Show info cards on label
+            if (LinkedLabel != null)
+                LinkedLabel.ShowInfoCards(true);
+        }
+        
+        private void HideCityVisuals()
+        {
+            // Hide the 3D city buildings (keep glow ring)
+            if (devVisuals != null)
+            {
+                foreach (Transform child in devVisuals.transform)
+                {
+                    // Don't hide the collider or the glow ring itself
+                    if (child.name != "GlowRing" && child.gameObject != glowRing 
+                        && child.GetComponent<Collider>() == null)
+                        child.gameObject.SetActive(false);
+                }
+            }
+            
+            // Hide info cards on label
+            if (LinkedLabel != null)
+                LinkedLabel.ShowInfoCards(false);
         }
         
         private void OnMouseEnter() => SetHighlighted(true);
-        private void OnMouseExit() { if (!isDragging && !isHighlighted) SetHighlighted(false); }
+        private void OnMouseExit() { if (!isDragging) SetHighlighted(false); }
         
         private void OnMouseDown()
         {
@@ -1270,12 +1359,10 @@ namespace NapoleonicWars.Campaign
             if (!isDragging || !EditMode || Map == null || dragCamera == null) return;
             
             Ray ray = dragCamera.ScreenPointToRay(Input.mousePosition);
-            // Raycast onto a horizontal plane at current city height
             Plane plane = new Plane(Vector3.up, transform.position);
             if (plane.Raycast(ray, out float dist))
             {
                 Vector3 worldHit = ray.GetPoint(dist);
-                // Snap Y to terrain
                 Vector2 newMapPos = Map.WorldToMapPosition(worldHit);
                 newMapPos.x = Mathf.Clamp01(newMapPos.x);
                 newMapPos.y = Mathf.Clamp01(newMapPos.y);
@@ -1283,7 +1370,6 @@ namespace NapoleonicWars.Campaign
                 
                 transform.position = snappedWorld;
                 
-                // Move label
                 if (LinkedLabel != null)
                     LinkedLabel.SetPosition(snappedWorld);
             }
@@ -1296,14 +1382,12 @@ namespace NapoleonicWars.Campaign
             
             if (Map == null) return;
             
-            // Persist new position
             Vector2 finalMapPos = Map.WorldToMapPosition(transform.position);
             finalMapPos.x = Mathf.Clamp01(finalMapPos.x);
             finalMapPos.y = Mathf.Clamp01(finalMapPos.y);
             
             ProvinceData.mapPosition = finalMapPos;
             
-            // Also update associated CityData
             if (CampaignManager.Instance != null)
             {
                 CityData city = CampaignManager.Instance.GetCityForProvince(ProvinceData.provinceId);
@@ -1312,8 +1396,6 @@ namespace NapoleonicWars.Campaign
             }
             
             Debug.Log($"[CityEdit] {ProvinceData.provinceName} moved to mapPos ({finalMapPos.x:F4}, {finalMapPos.y:F4})");
-            
-            // Persist to file
             CityPositionOverrides.SavePosition(ProvinceData.provinceId, finalMapPos);
         }
     }

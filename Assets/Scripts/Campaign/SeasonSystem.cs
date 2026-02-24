@@ -13,17 +13,41 @@ namespace NapoleonicWars.Campaign
     }
 
     /// <summary>
-    /// Campaign season system. 4 turns = 1 year. Each season has distinct effects
-    /// on movement, attrition, supply, production, and food.
+    /// Campaign season/date system. Tracks day, month, season, year.
+    /// Each season = 90 days = 3 months of 30 days each.
     /// </summary>
     public static class SeasonSystem
     {
         // Current state
         private static int currentYear = 1700;
         private static Season currentSeason = Season.Spring;
+        private static int dayInSeason = 0;  // 0..89
 
         public static int CurrentYear => currentYear;
         public static Season CurrentSeason => currentSeason;
+        public static int DayInSeason => dayInSeason;
+        
+        /// <summary>Current day of the month (1-30).</summary>
+        public static int DayOfMonth => (dayInSeason % 30) + 1;
+        
+        /// <summary>Month index within the year (1-12).</summary>
+        public static int CurrentMonth
+        {
+            get
+            {
+                int seasonBase = currentSeason switch
+                {
+                    Season.Spring => 3,  // Apr, May, Jun
+                    Season.Summer => 6,  // Jul, Aug, Sep
+                    Season.Autumn => 9,  // Oct, Nov, Dec
+                    Season.Winter => 0,  // Jan, Feb, Mar
+                    _ => 0
+                };
+                int monthInSeason = dayInSeason / 30; // 0, 1, 2
+                return seasonBase + monthInSeason + 1; // 1-12
+            }
+        }
+
         public static string CurrentSeasonName => currentSeason switch
         {
             Season.Spring => "Printemps",
@@ -32,16 +56,43 @@ namespace NapoleonicWars.Campaign
             Season.Winter => "Hiver",
             _ => "?"
         };
-        public static string DateString => $"{CurrentSeasonName} {currentYear}";
+
+        private static readonly string[] MonthNames = {
+            "Jan", "Fév", "Mar", "Avr", "Mai", "Jun",
+            "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc"
+        };
+        
+        /// <summary>Get current month name.</summary>
+        public static string GetMonthName() => MonthNames[Mathf.Clamp(CurrentMonth - 1, 0, 11)];
+        
+        /// <summary>Full date string: "12 Avr 1700"</summary>
+        public static string DateString => $"{DayOfMonth} {GetMonthName()} {currentYear}";
+        
+        /// <summary>Short date: "Avr 1700"</summary>
+        public static string ShortDateString => $"{GetMonthName()} {currentYear}";
 
         /// <summary>Initialize season system at game start</summary>
         public static void Initialize(int startYear = 1700)
         {
             currentYear = startYear;
             currentSeason = Season.Spring;
+            dayInSeason = 0;
         }
 
-        /// <summary>Advance to next season. Call once per turn.</summary>
+        /// <summary>Advance by one day. Returns true if a new season started.</summary>
+        public static bool AdvanceDay()
+        {
+            dayInSeason++;
+            if (dayInSeason >= 90)
+            {
+                dayInSeason = 0;
+                AdvanceSeason();
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>Advance to next season (called automatically by AdvanceDay).</summary>
         public static void AdvanceSeason()
         {
             switch (currentSeason)
@@ -70,7 +121,6 @@ namespace NapoleonicWars.Campaign
                 _ => 1.0f
             };
 
-            // Snow/mountain provinces are even worse in winter
             if (currentSeason == Season.Winter)
             {
                 if (terrain == ProvinceTerrainType.Snow) baseMod *= 0.5f;
@@ -78,7 +128,6 @@ namespace NapoleonicWars.Campaign
                 if (terrain == ProvinceTerrainType.Marsh) baseMod *= 0.4f;
             }
 
-            // Desert is bad in summer
             if (currentSeason == Season.Summer && terrain == ProvinceTerrainType.Desert)
                 baseMod *= 0.7f;
 
@@ -97,15 +146,12 @@ namespace NapoleonicWars.Campaign
                 _ => 1.0f
             };
 
-            // Russian winter is legendary
             if (currentSeason == Season.Winter && isRussianTerritory)
-                baseMod *= 1.5f; // 3x total in Russian winter
+                baseMod *= 1.5f;
 
-            // Snow provinces double winter attrition
             if (currentSeason == Season.Winter && terrain == ProvinceTerrainType.Snow)
                 baseMod *= 1.5f;
 
-            // Desert summer attrition
             if (currentSeason == Season.Summer && terrain == ProvinceTerrainType.Desert)
                 baseMod *= 1.8f;
 
@@ -130,10 +176,10 @@ namespace NapoleonicWars.Campaign
         {
             return currentSeason switch
             {
-                Season.Spring => 1.2f,    // Planting season bonus
+                Season.Spring => 1.2f,
                 Season.Summer => 1.0f,
-                Season.Autumn => 1.8f,    // Harvest!
-                Season.Winter => 0.3f,    // Almost no food production
+                Season.Autumn => 1.8f,
+                Season.Winter => 0.3f,
                 _ => 1.0f
             };
         }
@@ -144,9 +190,9 @@ namespace NapoleonicWars.Campaign
             return currentSeason switch
             {
                 Season.Spring => 1.0f,
-                Season.Summer => 1.15f,   // Long days, good weather
+                Season.Summer => 1.15f,
                 Season.Autumn => 1.0f,
-                Season.Winter => 0.75f,   // Reduced activity
+                Season.Winter => 0.75f,
                 _ => 1.0f
             };
         }
@@ -156,10 +202,10 @@ namespace NapoleonicWars.Campaign
         {
             return currentSeason switch
             {
-                Season.Spring => 1.3f,    // Birth season
+                Season.Spring => 1.3f,
                 Season.Summer => 1.0f,
                 Season.Autumn => 0.9f,
-                Season.Winter => 0.5f,    // Disease, cold
+                Season.Winter => 0.5f,
                 _ => 1.0f
             };
         }
@@ -167,7 +213,6 @@ namespace NapoleonicWars.Campaign
         /// <summary>Can sieges be conducted this season?</summary>
         public static bool CanSiege(ProvinceTerrainType terrain)
         {
-            // No sieges in deep winter except in mild climates
             if (currentSeason == Season.Winter)
             {
                 return terrain == ProvinceTerrainType.Coastal ||
@@ -182,20 +227,20 @@ namespace NapoleonicWars.Campaign
         {
             return currentSeason switch
             {
-                Season.Spring => 1.2f,    // Men available after winter
+                Season.Spring => 1.2f,
                 Season.Summer => 1.0f,
-                Season.Autumn => 0.8f,    // Harvest needs workers
-                Season.Winter => 0.6f,    // Hard to recruit in winter
+                Season.Autumn => 0.8f,
+                Season.Winter => 0.6f,
                 _ => 1.0f
             };
         }
 
-        /// <summary>Get the season for battle terrain (used by BattleTerrainConfigurator)</summary>
+        /// <summary>Get the season for battle terrain</summary>
         public static string GetBattleSeasonString()
         {
             return currentSeason switch
             {
-                Season.Spring => "summer",  // Spring uses summer visuals
+                Season.Spring => "summer",
                 Season.Summer => "summer",
                 Season.Autumn => "autumn",
                 Season.Winter => "winter",
@@ -206,7 +251,6 @@ namespace NapoleonicWars.Campaign
         /// <summary>Is this province in an extended winter zone? (Russia, Scandinavia)</summary>
         public static bool IsExtendedWinterZone(string provinceId)
         {
-            // Russian provinces have extended winter (Autumn also counts as harsh)
             string[] extendedWinter = {
                 "moscow", "st_petersburg", "novgorod", "pskov", "tver", "smolensk",
                 "vologda", "kostroma", "yaroslavl", "perm", "vyatka", "ufa",
@@ -216,11 +260,11 @@ namespace NapoleonicWars.Campaign
             return System.Array.IndexOf(extendedWinter, provinceId) >= 0;
         }
 
-        /// <summary>Get effective season for a province (extended winter zones feel winter in autumn too)</summary>
+        /// <summary>Get effective season for a province</summary>
         public static Season GetEffectiveSeason(string provinceId)
         {
             if (currentSeason == Season.Autumn && IsExtendedWinterZone(provinceId))
-                return Season.Winter; // Early winter in northern regions
+                return Season.Winter;
             return currentSeason;
         }
 

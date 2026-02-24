@@ -127,17 +127,27 @@ namespace NapoleonicWars.Campaign
             int level = cityData != null ? cityData.cityLevel : 1;
             var buildings = cityData?.buildings;
 
+            // Analyze building composition for visual flavor
+            var composition = AnalyzeBuildingComposition(buildings);
+
             GameObject root = new GameObject("CityVisual");
             root.transform.SetParent(parent);
             root.transform.localPosition = Vector3.zero;
 
-            // Ground disc
+            // Ground disc — color shifts based on composition
             float groundRadius = GetCityRadius(level);
-            Cyl(root.transform, "Ground", DirtMat, new Vector3(groundRadius * 2f, 0.15f, groundRadius * 2f), new Vector3(0f, 0.1f, 0f));
+            Material groundMat = GetGroundMaterial(composition);
+            Cyl(root.transform, "Ground", groundMat, new Vector3(groundRadius * 2f, 0.15f, groundRadius * 2f), new Vector3(0f, 0.1f, 0f));
 
-            // Walls (level 2+)
-            if (level >= 2)
-                CreateWalls(root.transform, level, techEra, groundRadius);
+            // Walls: level 2+ normally, but military cities get walls earlier
+            int effectiveWallLevel = level;
+            if (composition.dominant == BuildingCategory.Military && level < 2)
+                effectiveWallLevel = 2; // Military cities get palisade at level 1
+            if (composition.militaryCount >= 3)
+                effectiveWallLevel = Mathf.Max(effectiveWallLevel, 3); // Heavy military = stone walls
+
+            if (effectiveWallLevel >= 2)
+                CreateWalls(root.transform, effectiveWallLevel, techEra, groundRadius);
 
             // Residential buildings
             int houseCount = GetHouseCount(level);
@@ -150,6 +160,9 @@ namespace NapoleonicWars.Campaign
             // Specific constructed buildings
             if (buildings != null)
                 CreateSpecificBuildings(root.transform, buildings, level, techEra, groundRadius);
+
+            // ==================== COMPOSITION OVERLAYS ====================
+            CreateCompositionOverlays(root.transform, composition, level, techEra, groundRadius);
 
             // Flagpole
             CreateFlagpole(root.transform, faction, level, isNationCapital);
@@ -1186,6 +1199,295 @@ namespace NapoleonicWars.Campaign
             Cyl(parent, "Flagpole", MetalMat, new Vector3(poleT, poleH * 0.5f, poleT), new Vector3(0f, poleH * 0.5f, 0f));
             Box(parent, "Flag", GetFactionFlag(faction), new Vector3(flagW, flagH, 0.1f),
                 new Vector3(flagW * 0.5f, poleH - flagH * 0.5f, 0f));
+        }
+
+        // ==================== BUILDING COMPOSITION ANALYSIS ====================
+
+        private struct CityComposition
+        {
+            public int militaryCount;
+            public int economyCount;
+            public int religionCount;
+            public int academicCount;
+            public int infrastructureCount;
+            public int totalBuilt;
+            public BuildingCategory dominant;
+        }
+
+        private static CityComposition AnalyzeBuildingComposition(List<CityBuilding> buildings)
+        {
+            var comp = new CityComposition();
+            if (buildings == null || buildings.Count == 0)
+            {
+                comp.dominant = BuildingCategory.Infrastructure;
+                return comp;
+            }
+
+            foreach (var b in buildings)
+            {
+                if (!b.isConstructed) continue;
+                comp.totalBuilt++;
+                var cat = BuildingInfo.GetCategory(b.buildingType);
+                switch (cat)
+                {
+                    case BuildingCategory.Military: comp.militaryCount++; break;
+                    case BuildingCategory.Economy: comp.economyCount++; break;
+                    case BuildingCategory.Religion: comp.religionCount++; break;
+                    case BuildingCategory.Academic: comp.academicCount++; break;
+                    default: comp.infrastructureCount++; break;
+                }
+            }
+
+            // Determine dominant category
+            int max = comp.militaryCount;
+            comp.dominant = BuildingCategory.Military;
+            if (comp.economyCount > max) { max = comp.economyCount; comp.dominant = BuildingCategory.Economy; }
+            if (comp.religionCount > max) { max = comp.religionCount; comp.dominant = BuildingCategory.Religion; }
+            if (comp.academicCount > max) { max = comp.academicCount; comp.dominant = BuildingCategory.Academic; }
+            if (max == 0) comp.dominant = BuildingCategory.Infrastructure;
+
+            return comp;
+        }
+
+        // Materials for composition-tinted ground
+        private static Material MilitaryGround => GetMat("cv_mil_ground", new Color(0.38f, 0.32f, 0.26f));
+        private static Material EconomyGround => GetMat("cv_eco_ground", new Color(0.48f, 0.42f, 0.28f));
+        private static Material ReligionGround => GetMat("cv_rel_ground", new Color(0.42f, 0.38f, 0.35f));
+        private static Material AcademicGround => GetMat("cv_aca_ground", new Color(0.40f, 0.38f, 0.32f));
+        private static Material CannonMetal => GetMat("cv_cannon", new Color(0.22f, 0.22f, 0.25f));
+        private static Material WoodDark => GetMat("cv_wooddark", new Color(0.35f, 0.25f, 0.12f));
+        private static Material ClothRed => GetMat("cv_clothred", new Color(0.65f, 0.15f, 0.10f));
+        private static Material ClothGold => GetMat("cv_clothgold", new Color(0.75f, 0.60f, 0.20f));
+        private static Material Marble => GetMat("cv_marble", new Color(0.85f, 0.82f, 0.78f));
+
+        private static Material GetGroundMaterial(CityComposition comp)
+        {
+            if (comp.totalBuilt == 0) return DirtMat;
+            return comp.dominant switch
+            {
+                BuildingCategory.Military => MilitaryGround,
+                BuildingCategory.Economy => EconomyGround,
+                BuildingCategory.Religion => ReligionGround,
+                BuildingCategory.Academic => AcademicGround,
+                _ => DirtMat
+            };
+        }
+
+        // ==================== COMPOSITION OVERLAYS ====================
+
+        private static void CreateCompositionOverlays(Transform parent, CityComposition comp, int level, int era, float radius)
+        {
+            if (comp.totalBuilt == 0) return;
+
+            switch (comp.dominant)
+            {
+                case BuildingCategory.Military:
+                    CreateMilitaryOverlays(parent, comp.militaryCount, level, era, radius);
+                    break;
+                case BuildingCategory.Economy:
+                    CreateEconomyOverlays(parent, comp.economyCount, level, era, radius);
+                    break;
+                case BuildingCategory.Religion:
+                    CreateReligionOverlays(parent, comp.religionCount, level, radius);
+                    break;
+                case BuildingCategory.Academic:
+                    CreateAcademicOverlays(parent, comp.academicCount, level, era, radius);
+                    break;
+            }
+        }
+
+        // --- MILITARY: cannons, watchtowers, weapon racks, training dummies ---
+        private static void CreateMilitaryOverlays(Transform parent, int count, int level, int era, float radius)
+        {
+            float outerR = radius * 1.05f;
+
+            // Cannons along the perimeter (1 per military building, max 6)
+            int cannonCount = Mathf.Min(count, 6);
+            for (int i = 0; i < cannonCount; i++)
+            {
+                float a = (i / (float)cannonCount) * Mathf.PI * 2f + Mathf.PI * 0.1f;
+                Vector3 cPos = new Vector3(Mathf.Cos(a) * outerR, 0f, Mathf.Sin(a) * outerR);
+
+                // Cannon barrel (cylinder)
+                var barrel = Cyl(parent, $"Cannon_{i}", CannonMetal,
+                    new Vector3(0.4f, 1.5f, 0.4f), cPos + Vector3.up * 0.8f);
+                barrel.transform.localRotation = Quaternion.Euler(0f, -a * Mathf.Rad2Deg + 90f, 70f);
+
+                // Cannon wheels (small cylinders)
+                Box(parent, $"CannonBase_{i}", WoodDark,
+                    new Vector3(1.0f, 0.4f, 0.8f), cPos + Vector3.up * 0.2f);
+            }
+
+            // Watchtower (if 2+ military buildings)
+            if (count >= 2)
+            {
+                float tH = 12f + level * 2f;
+                Vector3 tPos = new Vector3(radius * 0.8f, 0f, -radius * 0.6f);
+                Cyl(parent, "Watchtower", StoneWall, new Vector3(1.2f, tH * 0.5f, 1.2f), tPos + Vector3.up * tH * 0.5f);
+                // Platform
+                Box(parent, "WatchtowerTop", WoodDark, new Vector3(2.5f, 0.3f, 2.5f), tPos + Vector3.up * tH);
+                // Roof
+                Cyl(parent, "WatchtowerRoof", GetMat("cv_tile", new Color(0.60f, 0.22f, 0.15f)),
+                    new Vector3(3f, 1.5f, 3f), tPos + Vector3.up * (tH + 1f));
+            }
+
+            // Training dummies (if 3+ military buildings)
+            if (count >= 3)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    float a = Mathf.PI * 0.7f + i * 0.4f;
+                    Vector3 dPos = new Vector3(Mathf.Cos(a) * radius * 0.5f, 0f, Mathf.Sin(a) * radius * 0.5f);
+                    // Pole
+                    Cyl(parent, $"DummyPole_{i}", WoodDark, new Vector3(0.15f, 2f, 0.15f), dPos + Vector3.up * 2f);
+                    // Cross arm
+                    Box(parent, $"DummyArm_{i}", WoodDark, new Vector3(1.2f, 0.15f, 0.15f), dPos + Vector3.up * 3.5f);
+                    // Target (sphere)
+                    Sphere(parent, $"DummyTarget_{i}", ClothRed, new Vector3(0.6f, 0.6f, 0.6f), dPos + Vector3.up * 3.5f);
+                }
+            }
+
+            // Weapon racks (if 4+ military buildings)
+            if (count >= 4)
+            {
+                Vector3 rPos = new Vector3(-radius * 0.4f, 0f, radius * 0.3f);
+                Box(parent, "WeaponRack", WoodDark, new Vector3(2.5f, 2f, 0.4f), rPos + Vector3.up * 1f);
+                // "Weapons" on the rack
+                for (int i = 0; i < 4; i++)
+                    Box(parent, $"Weapon_{i}", MetalMat, new Vector3(0.1f, 1.8f, 0.1f),
+                        rPos + new Vector3(-0.9f + i * 0.6f, 1f, 0f));
+            }
+        }
+
+        // --- ECONOMY: market stalls, crates, wagons ---
+        private static void CreateEconomyOverlays(Transform parent, int count, int level, int era, float radius)
+        {
+            // Market stalls around the center
+            int stallCount = Mathf.Min(count + 1, 5);
+            for (int i = 0; i < stallCount; i++)
+            {
+                float a = Mathf.PI * -0.3f + i * 0.5f;
+                Vector3 sPos = new Vector3(Mathf.Cos(a) * radius * 0.4f, 0f, Mathf.Sin(a) * radius * 0.4f);
+
+                // Table
+                Box(parent, $"Stall_{i}", WoodDark, new Vector3(2.5f, 0.15f, 1.5f), sPos + Vector3.up * 1.2f);
+                // Legs
+                Box(parent, $"StallLeg_{i}", WoodDark, new Vector3(0.15f, 1.2f, 0.15f), sPos + new Vector3(-1f, 0.6f, -0.5f));
+                Box(parent, $"StallLegB_{i}", WoodDark, new Vector3(0.15f, 1.2f, 0.15f), sPos + new Vector3(1f, 0.6f, 0.5f));
+                // Awning (colored cloth)
+                Material awning = i % 2 == 0 ? ClothRed : ClothGold;
+                Box(parent, $"Awning_{i}", awning, new Vector3(2.8f, 0.1f, 2f), sPos + Vector3.up * 2.8f);
+            }
+
+            // Crate stacks (if 2+)
+            if (count >= 2)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    float a = Mathf.PI * 1.2f + i * 0.35f;
+                    Vector3 cPos = new Vector3(Mathf.Cos(a) * radius * 0.55f, 0f, Mathf.Sin(a) * radius * 0.55f);
+                    Box(parent, $"Crate_{i}", WoodDark, new Vector3(0.8f, 0.8f, 0.8f), cPos + Vector3.up * 0.4f);
+                    if (i < 2) // Stack a second crate on top
+                        Box(parent, $"CrateTop_{i}", WoodDark, new Vector3(0.7f, 0.7f, 0.7f), cPos + Vector3.up * 1.15f);
+                }
+            }
+
+            // Wagon (if 3+)
+            if (count >= 3)
+            {
+                Vector3 wPos = new Vector3(-radius * 0.6f, 0f, -radius * 0.3f);
+                Box(parent, "Wagon", WoodDark, new Vector3(3f, 1f, 1.5f), wPos + Vector3.up * 0.8f);
+                // Wheels
+                Cyl(parent, "WheelL", WoodDark, new Vector3(1.2f, 0.15f, 1.2f), wPos + new Vector3(-1.2f, 0.6f, -0.8f));
+                Cyl(parent, "WheelR", WoodDark, new Vector3(1.2f, 0.15f, 1.2f), wPos + new Vector3(1.2f, 0.6f, -0.8f));
+                // Goods on wagon
+                Box(parent, "WagonGoods", ClothGold, new Vector3(2f, 0.6f, 1f), wPos + Vector3.up * 1.6f);
+            }
+        }
+
+        // --- RELIGION: shrines, candle clusters, crosses ---
+        private static void CreateReligionOverlays(Transform parent, int count, int level, float radius)
+        {
+            // Small roadside shrine
+            Vector3 sPos = new Vector3(radius * 0.5f, 0f, -radius * 0.4f);
+            Box(parent, "Shrine", LightStone, new Vector3(1.5f, 2.5f, 1.5f), sPos + Vector3.up * 1.25f);
+            // Cross on shrine
+            Box(parent, "ShrineCross_V", MetalMat, new Vector3(0.15f, 1.5f, 0.15f), sPos + Vector3.up * 3.5f);
+            Box(parent, "ShrineCross_H", MetalMat, new Vector3(0.8f, 0.15f, 0.15f), sPos + Vector3.up * 3.8f);
+
+            // Prayer candle clusters (if 2+)
+            if (count >= 2)
+            {
+                for (int i = 0; i < 4; i++)
+                {
+                    float a = Mathf.PI * 0.5f + i * 0.3f;
+                    Vector3 cPos = new Vector3(Mathf.Cos(a) * radius * 0.35f, 0f, Mathf.Sin(a) * radius * 0.35f);
+                    Cyl(parent, $"Candle_{i}", GetMat("cv_candle", new Color(0.85f, 0.78f, 0.55f)),
+                        new Vector3(0.12f, 0.8f + i * 0.15f, 0.12f), cPos + Vector3.up * 0.5f);
+                    // Flame (tiny bright sphere)
+                    Sphere(parent, $"Flame_{i}", GetMat("cv_flame", new Color(1f, 0.85f, 0.3f)),
+                        new Vector3(0.1f, 0.15f, 0.1f), cPos + Vector3.up * (1f + i * 0.15f));
+                }
+            }
+
+            // Cemetery (if 3+)
+            if (count >= 3)
+            {
+                for (int i = 0; i < 5; i++)
+                {
+                    float x = -radius * 0.5f + i * 1.2f;
+                    Vector3 gPos = new Vector3(x, 0f, radius * 0.6f);
+                    Box(parent, $"Grave_{i}", LightStone, new Vector3(0.5f, 1.2f, 0.2f), gPos + Vector3.up * 0.6f);
+                }
+            }
+        }
+
+        // --- ACADEMIC: columns, telescope dome, book stacks ---
+        private static void CreateAcademicOverlays(Transform parent, int count, int level, int era, float radius)
+        {
+            // Colonnade (classical columns)
+            int colCount = Mathf.Min(count + 2, 6);
+            float colStart = -radius * 0.4f;
+            for (int i = 0; i < colCount; i++)
+            {
+                Vector3 cPos = new Vector3(colStart + i * 2f, 0f, -radius * 0.5f);
+                float colH = 5f + era;
+                Cyl(parent, $"Column_{i}", Marble, new Vector3(0.5f, colH * 0.5f, 0.5f), cPos + Vector3.up * colH * 0.5f);
+                // Capital (top)
+                Box(parent, $"ColumnCap_{i}", Marble, new Vector3(0.8f, 0.3f, 0.8f), cPos + Vector3.up * colH);
+            }
+
+            // Architrave connecting columns
+            if (colCount >= 3)
+            {
+                float colH = 5f + era;
+                Box(parent, "Architrave", Marble,
+                    new Vector3((colCount - 1) * 2f, 0.4f, 0.6f),
+                    new Vector3(colStart + (colCount - 1), colH + 0.4f, -radius * 0.5f));
+            }
+
+            // Observatory dome (if 2+)
+            if (count >= 2)
+            {
+                Vector3 oPos = new Vector3(radius * 0.6f, 0f, radius * 0.4f);
+                float domeH = 6f;
+                Cyl(parent, "ObsBase", LightStone, new Vector3(3f, domeH * 0.5f, 3f), oPos + Vector3.up * domeH * 0.5f);
+                Sphere(parent, "ObsDome", CopperRoof, new Vector3(3.5f, 2.5f, 3.5f), oPos + Vector3.up * (domeH + 0.5f));
+                // Telescope tube
+                var tube = Cyl(parent, "Telescope", MetalMat, new Vector3(0.3f, 2f, 0.3f), oPos + Vector3.up * (domeH + 1.5f));
+                tube.transform.localRotation = Quaternion.Euler(30f, 0f, 0f);
+            }
+
+            // Book stacks / scrolls (if 3+)
+            if (count >= 3)
+            {
+                Vector3 bPos = new Vector3(-radius * 0.3f, 0f, radius * 0.4f);
+                for (int i = 0; i < 3; i++)
+                {
+                    Box(parent, $"Books_{i}", GetMat($"cv_book{i}", new Color(0.55f - i * 0.1f, 0.25f, 0.15f + i * 0.1f)),
+                        new Vector3(1f, 0.3f, 0.7f), bPos + new Vector3(i * 0.3f, 0.15f + i * 0.3f, 0f));
+                }
+            }
         }
     }
 }

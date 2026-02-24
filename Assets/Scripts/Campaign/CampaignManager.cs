@@ -16,6 +16,9 @@ namespace NapoleonicWars.Campaign
         private FactionType currentFactionTurn;
         private CampaignPhase currentPhase = CampaignPhase.PlayerTurn;
 
+        // Real-time clock
+        private CampaignClock campaignClock;
+
         [Header("Map Alignment")]
         [Tooltip("Adjust these to align the coded province coordinates with your custom heightmap image")]
         public Vector2 mapOffset = Vector2.zero;
@@ -103,7 +106,15 @@ namespace NapoleonicWars.Campaign
             try { InitializeHoI4Systems(); }
             catch (System.Exception e) { Debug.LogError($"[CampaignManager] HoI4 systems init failed: {e.Message}\n{e.StackTrace}"); }
 
-            Debug.Log($"[CampaignManager] Campaign started. Turn {currentTurn} - {playerFaction}. Provinces: {provinces.Count}, Cities: {cities.Count}, Armies: {armies.Count}");
+            // === REAL-TIME CLOCK ===
+            campaignClock = gameObject.AddComponent<CampaignClock>();
+            campaignClock.SecondsPerDay = 5f;     // 5 real seconds = 1 game day
+            campaignClock.DaysPerSeason = 90;      // 90 days per season
+            campaignClock.OnDayTick += ProcessDayTick;
+            campaignClock.OnSeasonTick += ProcessSeasonTick;
+            campaignClock.Pause(); // Start paused so player can orient themselves
+
+            Debug.Log($"[CampaignManager] Campaign started (REAL-TIME). Day-based: 5s/day. {playerFaction}. Provinces: {provinces.Count}, Cities: {cities.Count}, Armies: {armies.Count}");
         }
 
         private void CreateFactions()
@@ -1200,35 +1211,56 @@ namespace NapoleonicWars.Campaign
 
         // === TURN SYSTEM ===
 
+        /// <summary>
+        /// Legacy compatibility — forces an immediate season tick.
+        /// </summary>
         public void EndPlayerTurn()
         {
-            if (currentPhase != CampaignPhase.PlayerTurn) return;
+            ProcessSeasonTick();
+        }
 
+        /// <summary>
+        /// Light daily processing — called every 5 real seconds (= 1 game day).
+        /// Handles: date advance, army movement progress, daily UI updates.
+        /// </summary>
+        public void ProcessDayTick()
+        {
+            // Advance the calendar by one day
+            SeasonSystem.AdvanceDay();
+            
+            // Daily army movement progress (could be used for continuous movement)
+            // For now, just update visuals
+            var map3D = FindAnyObjectByType<CampaignMap3D>();
+            
+            // Fire turn-changed event for UI refresh (date display etc.)
+            OnTurnChanged?.Invoke(currentTurn, playerFaction);
+        }
+
+        /// <summary>
+        /// Heavy seasonal processing — called every 90 game days (= 1 season = ~7.5 min at 1×).
+        /// Handles: economy, buildings, tech, AI decisions, supply, diplomacy, events.
+        /// </summary>
+        public void ProcessSeasonTick()
+        {
             // Process building construction and research
             BuildingManager.Instance?.ProcessTurn();
 
-            ProcessFactionTurn(playerFaction);
-            currentPhase = CampaignPhase.AITurns;
-
-            // Process AI factions
+            // Process ALL factions (player + AI) simultaneously
             foreach (var kvp in factions)
             {
-                if (kvp.Key == playerFaction) continue;
                 if (kvp.Value.isEliminated) continue;
                 ProcessFactionTurn(kvp.Key);
             }
 
-            // Supply system — apply attrition to oversupplied provinces
+            // Supply system — apply attrition
             SupplySystem.ProcessSupplyTurn(armies, factions);
 
             // Co-op request expiry
             Network.CoopRequestSystem.Instance?.ProcessTurnExpiry(currentTurn);
 
-            // Advance season and turn
-            SeasonSystem.AdvanceSeason();
+            // Turn counter (legacy — 1 turn = 1 season)
             currentTurn++;
             currentFactionTurn = playerFaction;
-            currentPhase = CampaignPhase.PlayerTurn;
 
             // Reset movement for all armies
             foreach (var army in armies.Values)
@@ -1240,33 +1272,34 @@ namespace NapoleonicWars.Campaign
             // Process research assignment turns
             ResearchAssignmentManager.Instance?.ProcessEndOfTurn();
 
-            // Naval system: construction, storms, auto-combat
+            // Naval system
             NavalSystem.ProcessNavalTurn(this);
 
-            // Supply depots resupply and cleanup
+            // Supply depots
             SupplyLineSystem.CleanupDepots(this);
 
-            // War justification, coalition formation, AE decay
+            // Diplomacy
             WarJustificationSystem.ProcessTurn(currentTurn);
 
-            // Check victory conditions for player
+            // Victory check
             var victory = WarJustificationSystem.CheckVictoryProgress(playerFaction, currentTurn);
             if (victory != null)
                 AddFactionEvent(playerFaction, $"VICTOIRE: {WarJustificationSystem.GetVictoryName(victory.type)}!");
 
-            // Check historical events
+            // Historical events
             if (eventSystem != null)
                 eventSystem.CheckEvents(this, currentTurn);
 
-            // Autosave
-            AutoSave();
+            // Autosave every year (4 seasons)
+            if (currentTurn % 4 == 0)
+                AutoSave();
 
-            // Refresh city visuals (incremental — only changed cities)
+            // Refresh city visuals
             var map3D = FindAnyObjectByType<CampaignMap3D>();
             if (map3D != null) map3D.RefreshCityVisuals();
 
             OnTurnChanged?.Invoke(currentTurn, playerFaction);
-            Debug.Log($"Turn {currentTurn} begins.");
+            Debug.Log($"[RealTime] Season tick #{currentTurn} — {SeasonSystem.DateString}");
         }
 
         private void ProcessFactionTurn(FactionType faction)

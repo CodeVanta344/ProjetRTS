@@ -33,10 +33,8 @@ namespace NapoleonicWars.Campaign
         private static readonly string COL_GREEN = "#7FDB7F";
         private static readonly string COL_BLUE = "#7FB3FF";
         private static readonly string COL_RED = "#FF7F7F";
-        private static readonly string COL_PURPLE = "#C09FFF";
         private static readonly string COL_ORANGE = "#FFB366";
         private static readonly string COL_GRAY = "#B0B0B0";
-        private static readonly string COL_WHITE = "#EEEEDD";
         
         public void Initialize(string cityName, string subInfo, bool isCapital, bool isPlayerFaction)
         {
@@ -122,6 +120,9 @@ namespace NapoleonicWars.Campaign
             var cardsShadow = cardsGO.AddComponent<Shadow>();
             cardsShadow.effectColor = new Color(0f, 0f, 0f, 0.6f);
             cardsShadow.effectDistance = new Vector2(1.5f, -1.5f);
+            
+            // Start hidden — shown on hover via ShowInfoCards()
+            cardsGO.SetActive(false);
         }
         
         /// <summary>
@@ -170,14 +171,6 @@ namespace NapoleonicWars.Campaign
                 sb.Append(" ");
             }
             
-            // Card 6: Specialization
-            if (cityData.specialization != CitySpecialization.None)
-            {
-                string specIcon = GetSpecIcon(cityData.specialization);
-                string specName = GetSpecShortName(cityData.specialization);
-                sb.Append($"<color={COL_PURPLE}>{specIcon}{specName}</color>");
-            }
-            
             cardsText.text = sb.ToString();
         }
         
@@ -211,33 +204,7 @@ namespace NapoleonicWars.Campaign
             return garrison;
         }
         
-        private string GetSpecIcon(CitySpecialization spec) => spec switch
-        {
-            CitySpecialization.Agriculture => "🌾",
-            CitySpecialization.Industry => "⚒",
-            CitySpecialization.Commerce => "💎",
-            CitySpecialization.Military => "⚔",
-            CitySpecialization.Mining => "⛏",
-            CitySpecialization.Fishing => "🐟",
-            CitySpecialization.Forestry => "🌲",
-            CitySpecialization.Port => "⚓",
-            CitySpecialization.University => "📖",
-            _ => "•"
-        };
         
-        private string GetSpecShortName(CitySpecialization spec) => spec switch
-        {
-            CitySpecialization.Agriculture => "Agri",
-            CitySpecialization.Industry => "Ind",
-            CitySpecialization.Commerce => "Com",
-            CitySpecialization.Military => "Mil",
-            CitySpecialization.Mining => "Mine",
-            CitySpecialization.Fishing => "Fish",
-            CitySpecialization.Forestry => "Wood",
-            CitySpecialization.Port => "Port",
-            CitySpecialization.University => "Univ",
-            _ => ""
-        };
         
         private string FormatPopulation(int pop)
         {
@@ -302,6 +269,15 @@ namespace NapoleonicWars.Campaign
         {
             if (nameText != null)
                 nameText.text = mainText;
+        }
+        
+        /// <summary>
+        /// Show or hide the info cards row. Called by CityMapMarker on hover.
+        /// </summary>
+        public void ShowInfoCards(bool show)
+        {
+            if (cardsText != null)
+                cardsText.gameObject.SetActive(show);
         }
     }
 }

@@ -8,7 +8,8 @@ using NapoleonicWars.Network;
 namespace NapoleonicWars.UI
 {
     /// <summary>
-    /// Total War-style bottom bar: faction emblem, end turn, minimap, event feed.
+    /// Bottom bar with faction info, event feed, and real-time speed controls.
+    /// Replaces the old "End Turn" button with Pause / 1× / 2× / 5× controls.
     /// </summary>
     public class BottomBar : MonoBehaviour
     {
@@ -16,6 +17,13 @@ namespace NapoleonicWars.UI
         private FactionData playerFaction;
         private Text factionNameText, eventText, turnInfoText;
         private Transform eventContainer;
+
+        // Speed controls
+        private Button pauseBtn;
+        private Button speed1Btn, speed2Btn, speed5Btn;
+        private Text pauseBtnText;
+        private Image progressFill;
+        private Text speedLabel;
 
         // Co-op ready state display
         private GameObject coopReadyPanel;
@@ -30,6 +38,22 @@ namespace NapoleonicWars.UI
             campaignManager = manager;
             playerFaction = manager.GetPlayerFaction();
             BuildBar();
+        }
+
+        private void Update()
+        {
+            // Update tick progress bar every frame — shows season progress (90 days)
+            if (CampaignClock.Instance != null && progressFill != null)
+            {
+                float p = CampaignClock.Instance.SeasonProgress;
+                progressFill.fillAmount = p;
+                
+                // Color shifts from gold to green as season approaches end
+                progressFill.color = Color.Lerp(
+                    new Color(0.85f, 0.7f, 0.2f, 0.9f),
+                    new Color(0.4f, 0.8f, 0.3f, 0.9f),
+                    p);
+            }
         }
 
         private void BuildBar()
@@ -93,7 +117,7 @@ namespace NapoleonicWars.UI
             eventPanel.anchorMin = new Vector2(0, 0);
             eventPanel.anchorMax = new Vector2(1, 1);
             eventPanel.offsetMin = new Vector2(230, 4);
-            eventPanel.offsetMax = new Vector2(-350, -4);
+            eventPanel.offsetMax = new Vector2(-420, -4);
 
             RectTransform eventBorder = UIFactory.CreatePanel(eventPanel, "EvBorder",
                 new Color(UIFactory.BorderGold.r, UIFactory.BorderGold.g, UIFactory.BorderGold.b, 0.3f));
@@ -113,27 +137,81 @@ namespace NapoleonicWars.UI
             etRT.offsetMin = new Vector2(10, 0);
             etRT.offsetMax = new Vector2(-10, 0);
 
-            // === RIGHT: Turn info + End Turn Button ===
+            // === RIGHT: Date + Speed Controls ===
             RectTransform rightPanel = UIFactory.CreatePanel(barRT, "RightPanel", new Color(0, 0, 0, 0));
             rightPanel.anchorMin = new Vector2(1, 0);
             rightPanel.anchorMax = new Vector2(1, 1);
-            rightPanel.offsetMin = new Vector2(-340, 4);
-            rightPanel.offsetMax = new Vector2(-8, -4);
-            HorizontalLayoutGroup rhlg = UIFactory.AddHorizontalLayout(rightPanel.gameObject, 8f);
+            rightPanel.offsetMin = new Vector2(-410, 2);
+            rightPanel.offsetMax = new Vector2(-8, -2);
+            HorizontalLayoutGroup rhlg = UIFactory.AddHorizontalLayout(rightPanel.gameObject, 6f);
             rhlg.childControlWidth = false;
             rhlg.childControlHeight = true;
             rhlg.childAlignment = TextAnchor.MiddleRight;
 
-            // Turn info
-            turnInfoText = UIFactory.CreateText(rightPanel, "TurnInfo", "Tour 1 — Jan 1805",
+            // Date/Season display
+            turnInfoText = UIFactory.CreateText(rightPanel, "DateInfo", "🌱 Printemps 1700",
                 13, TextAnchor.MiddleRight, UIFactory.ParchmentBeige);
-            UIFactory.AddLayoutElement(turnInfoText.gameObject, preferredWidth: 160, preferredHeight: 40);
+            UIFactory.AddLayoutElement(turnInfoText.gameObject, preferredWidth: 160, preferredHeight: 42);
 
-            // End Turn button (Total War style — big, prominent)
-            Button endTurnBtn = UIFactory.CreateWarhammerButton(rightPanel, "EndTurn",
-                "FIN DU TOUR ▶", 15, () => OnEndTurnButtonPressed());
-            UIFactory.AddLayoutElement(endTurnBtn.gameObject, preferredWidth: 160, preferredHeight: 42);
-            endTurnBtnText = endTurnBtn.GetComponentInChildren<Text>();
+            // Tick progress bar
+            GameObject progressContainer = new GameObject("TickProgress");
+            progressContainer.transform.SetParent(rightPanel, false);
+            RectTransform pcRT = progressContainer.AddComponent<RectTransform>();
+            UIFactory.AddLayoutElement(progressContainer, preferredWidth: 6, preferredHeight: 42);
+            
+            // BG
+            Image progressBg = progressContainer.AddComponent<Image>();
+            progressBg.color = new Color(0.15f, 0.15f, 0.15f, 0.8f);
+            
+            // Fill (child, fills bottom-to-top)
+            GameObject fillGO = new GameObject("Fill");
+            fillGO.transform.SetParent(progressContainer.transform, false);
+            RectTransform fillRT = fillGO.AddComponent<RectTransform>();
+            fillRT.anchorMin = Vector2.zero;
+            fillRT.anchorMax = new Vector2(1f, 0f);
+            fillRT.offsetMin = Vector2.zero;
+            fillRT.offsetMax = Vector2.zero;
+            progressFill = fillGO.AddComponent<Image>();
+            progressFill.color = new Color(0.85f, 0.7f, 0.2f, 0.9f);
+            progressFill.type = Image.Type.Filled;
+            progressFill.fillMethod = Image.FillMethod.Vertical;
+            progressFill.fillOrigin = 0; // bottom
+            progressFill.fillAmount = 0f;
+            // Make fill cover the full container
+            fillRT.anchorMin = Vector2.zero;
+            fillRT.anchorMax = Vector2.one;
+            fillRT.offsetMin = Vector2.zero;
+            fillRT.offsetMax = Vector2.zero;
+
+            // === SPEED CONTROL BUTTONS ===
+            // Pause button
+            pauseBtn = UIFactory.CreateWarhammerButton(rightPanel, "PauseBtn", "⏸", 16, () => OnPausePressed());
+            UIFactory.AddLayoutElement(pauseBtn.gameObject, preferredWidth: 42, preferredHeight: 42);
+            pauseBtnText = pauseBtn.GetComponentInChildren<Text>();
+
+            // Speed 1×
+            speed1Btn = UIFactory.CreateGoldButton(rightPanel, "Speed1", "1×", 13, () => SetGameSpeed(1));
+            UIFactory.AddLayoutElement(speed1Btn.gameObject, preferredWidth: 40, preferredHeight: 38);
+
+            // Speed 2×
+            speed2Btn = UIFactory.CreateGoldButton(rightPanel, "Speed2", "2×", 13, () => SetGameSpeed(2));
+            UIFactory.AddLayoutElement(speed2Btn.gameObject, preferredWidth: 40, preferredHeight: 38);
+
+            // Speed 5×
+            speed5Btn = UIFactory.CreateGoldButton(rightPanel, "Speed5", "5×", 13, () => SetGameSpeed(5));
+            UIFactory.AddLayoutElement(speed5Btn.gameObject, preferredWidth: 40, preferredHeight: 38);
+
+            // Speed label
+            speedLabel = UIFactory.CreateText(rightPanel, "SpeedLbl", "⏸",
+                11, TextAnchor.MiddleCenter, UIFactory.TextGrey);
+            UIFactory.AddLayoutElement(speedLabel.gameObject, preferredWidth: 30, preferredHeight: 42);
+
+            // Subscribe to speed changes
+            if (CampaignClock.Instance != null)
+            {
+                CampaignClock.Instance.OnSpeedChanged += OnSpeedChanged;
+                OnSpeedChanged(CampaignClock.Instance.Speed);
+            }
 
             // Co-op ready badges (only visible in co-op mode)
             BuildCoopReadyPanel(barRT);
@@ -146,15 +224,14 @@ namespace NapoleonicWars.UI
             RectTransform rt = coopReadyPanel.AddComponent<RectTransform>();
             rt.anchorMin = new Vector2(1, 0);
             rt.anchorMax = new Vector2(1, 1);
-            rt.offsetMin = new Vector2(-510, 6);
-            rt.offsetMax = new Vector2(-345, -6);
+            rt.offsetMin = new Vector2(-580, 6);
+            rt.offsetMax = new Vector2(-415, -6);
 
             HorizontalLayoutGroup hlg = UIFactory.AddHorizontalLayout(coopReadyPanel, 4f);
             hlg.childControlWidth = false;
             hlg.childControlHeight = true;
             hlg.childAlignment = TextAnchor.MiddleCenter;
 
-            // Create badge for each possible role
             foreach (CoopRole role in new[] { CoopRole.Marshal, CoopRole.Intendant, CoopRole.Chancellor, CoopRole.GrandVizir })
             {
                 Text badge = UIFactory.CreateText(coopReadyPanel.transform, $"Ready_{role}",
@@ -167,22 +244,61 @@ namespace NapoleonicWars.UI
             coopReadyPanel.SetActive(false);
         }
 
-        private void OnEndTurnButtonPressed()
+        // ── Speed Controls ──────────────────────────────────────
+
+        private void OnPausePressed()
         {
             if (CoopRoleManager.Instance != null && CoopRoleManager.Instance.IsCoopMode)
             {
-                // Co-op mode: toggle local ready state
+                // Co-op mode: toggle local ready state (legacy behavior)
                 localReady = !localReady;
                 CoopRoleManager.Instance.SetReadyServerRpc(localReady);
-
-                if (endTurnBtnText != null)
-                    endTurnBtnText.text = localReady ? "✓ PRÊT" : "FIN DU TOUR ▶";
+                if (pauseBtnText != null)
+                    pauseBtnText.text = localReady ? "✓" : "⏸";
             }
             else
             {
-                // Single player: immediate end turn
-                OnEndTurnClicked?.Invoke();
+                // Single player: toggle pause
+                if (CampaignClock.Instance != null)
+                    CampaignClock.Instance.TogglePause();
             }
+        }
+
+        private void SetGameSpeed(int speed)
+        {
+            if (CampaignClock.Instance != null)
+                CampaignClock.Instance.SetSpeed(speed);
+        }
+
+        private void OnSpeedChanged(int newSpeed)
+        {
+            // Update button highlights
+            HighlightButton(speed1Btn, newSpeed == 1);
+            HighlightButton(speed2Btn, newSpeed == 2);
+            HighlightButton(speed5Btn, newSpeed == 5);
+
+            // Update pause button
+            if (pauseBtnText != null)
+                pauseBtnText.text = newSpeed == 0 ? "▶" : "⏸";
+
+            // Speed label
+            if (speedLabel != null)
+            {
+                speedLabel.text = newSpeed == 0 ? "⏸" : $"{newSpeed}×";
+                speedLabel.color = newSpeed == 0 ? new Color(1f, 0.5f, 0.3f) : UIFactory.GoldAccent;
+            }
+        }
+
+        private void HighlightButton(Button btn, bool active)
+        {
+            if (btn == null) return;
+            var colors = btn.colors;
+            colors.normalColor = active ? new Color(0.6f, 0.5f, 0.2f) : new Color(0.25f, 0.22f, 0.18f);
+            btn.colors = colors;
+
+            Text txt = btn.GetComponentInChildren<Text>();
+            if (txt != null)
+                txt.color = active ? UIFactory.GoldAccent : UIFactory.TextGrey;
         }
 
         private string GetFactionEmblem()
@@ -205,12 +321,16 @@ namespace NapoleonicWars.UI
         {
             if (campaignManager == null) return;
 
-            int turn = campaignManager.CurrentTurn;
-            int month = (turn % 12) + 1;
-            int year = 1805 + turn / 12;
-            string[] months = { "Jan", "Fév", "Mar", "Avr", "Mai", "Jun",
-                                "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc" };
-            turnInfoText.text = $"Tour {turn} — {months[month - 1]} {year}";
+            // Date display — full date with day
+            string seasonIcon = SeasonSystem.GetSeasonIcon();
+            string dateLine = $"{seasonIcon} {SeasonSystem.DateString}";
+            
+            // Add speed indicator when paused
+            if (CampaignClock.Instance != null && CampaignClock.Instance.IsPaused)
+                dateLine += "  ⏸";
+
+            if (turnInfoText != null)
+                turnInfoText.text = dateLine;
 
             // Show latest faction event in the event feed
             if (playerFaction != null)
@@ -238,7 +358,6 @@ namespace NapoleonicWars.UI
             int maxPlayers = CoopRoleManager.Instance.MaxCoopPlayers;
             bool is2Player = maxPlayers == 2;
 
-            // Show/hide role badges based on mode
             foreach (var kvp in coopReadyTexts)
             {
                 CoopRole role = kvp.Key;
@@ -253,7 +372,6 @@ namespace NapoleonicWars.UI
                 badge.gameObject.SetActive(visible);
             }
 
-            // Update badges with ready state
             foreach (var player in players)
             {
                 if (coopReadyTexts.TryGetValue(player.role, out Text badge))
@@ -275,12 +393,6 @@ namespace NapoleonicWars.UI
                         badge.color = UIFactory.TextGrey;
                     }
                 }
-            }
-
-            // Reset local ready state on new turn
-            if (localReady && endTurnBtnText != null && endTurnBtnText.text == "✓ PRÊT")
-            {
-                // Will be reset by CoopRoleManager.ResetAllReady on turn start
             }
         }
 

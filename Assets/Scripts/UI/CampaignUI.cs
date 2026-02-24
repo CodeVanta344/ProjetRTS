@@ -362,6 +362,8 @@ namespace NapoleonicWars.UI
                 bottomBarRT.offsetMax = Vector2.zero;
                 bottomBar = bottomBarGO.AddComponent<BottomBar>();
                 bottomBar.Initialize(CampaignManager.Instance);
+                // Speed controls are handled internally by BottomBar ↔ CampaignClock
+                // Keep legacy callback for save/load compatibility
                 bottomBar.OnEndTurnClicked = () => CampaignManager.Instance.EndPlayerTurn();
             }
         }
@@ -1169,7 +1171,9 @@ namespace NapoleonicWars.UI
             cityPanel = panel.gameObject;
     
             Transform inner = panel.transform.Find("Inner");
-            UIFactory.AddVerticalLayout(inner.gameObject, 3f, new RectOffset(12, 12, 8, 8));
+            var vlg = UIFactory.AddVerticalLayout(inner.gameObject, 3f, new RectOffset(12, 12, 8, 8));
+            vlg.childControlHeight = true;  // Required for flexibleHeight on scroll views to work
+            vlg.childForceExpandHeight = false;
             
             // === HEADER ===
             GameObject headerRow = new GameObject("HeaderRow");
@@ -1192,7 +1196,9 @@ namespace NapoleonicWars.UI
             
             Button closeBtn = UIFactory.CreateGoldButton(headerRow.transform, "CloseBtn", "✕", 16,
                 () => CloseCityPanel());
-            UIFactory.AddLayoutElement(closeBtn.gameObject, 32, 28);
+            var closeLe = UIFactory.AddLayoutElement(closeBtn.gameObject, 32, 28);
+            closeLe.minWidth = 28;
+            closeLe.minHeight = 28;
             
             RectTransform sep = UIFactory.CreateOrnamentalSeparator(inner);
             UIFactory.AddLayoutElement(sep.gameObject, 12);
@@ -1628,19 +1634,59 @@ namespace NapoleonicWars.UI
         private void ShowCityBuildPicker(CityData city)
         {
             foreach (Transform child in buildMenuContainer) Destroy(child.gameObject);
-            BuildingType[] types = { BuildingType.Farm, BuildingType.Mine, BuildingType.Barracks,
-                BuildingType.Stables, BuildingType.Armory, BuildingType.Market,
-                BuildingType.Fortress, BuildingType.Church, BuildingType.University };
-            foreach (var type in types)
+            
+            // Gather ALL building types except Empty
+            var allTypes = new List<BuildingType>();
+            foreach (BuildingType bt in System.Enum.GetValues(typeof(BuildingType)))
             {
+                if (bt == BuildingType.Empty) continue;
+                allTypes.Add(bt);
+            }
+            
+            int count = 0;
+            foreach (var type in allTypes)
+            {
+                // Skip if city already has this building constructed or constructing
                 if (city.buildings.Exists(b => b.buildingType == type && (b.isConstructed || b.isConstructing))) continue;
+                
+                // Also check province building slots
+                if (openCityProvince != null && openCityProvince.buildings != null)
+                {
+                    bool inProvince = false;
+                    foreach (var slot in openCityProvince.buildings)
+                    {
+                        if (slot.type == type && (slot.level > 0 || slot.isConstructing))
+                        { inProvince = true; break; }
+                    }
+                    if (inProvince) continue;
+                }
+                
                 int cost = BuildingInfo.GetCostGold(type, 0);
                 int time = BuildingInfo.GetBuildTime(type);
+                string icon = BuildingInfo.GetIcon(type);
+                string desc = BuildingInfo.GetEffects(type);
+                
                 BuildingType ct = type;
-                Button btn = UIFactory.CreateGoldButton(buildMenuContainer, $"B_{type}", $"{BuildingInfo.GetName(type)} — {cost}g, {time}t", 12, () =>
+                string label = $"{icon} {BuildingInfo.GetName(type)} — {cost}g, {time}t";
+                if (!string.IsNullOrEmpty(desc))
+                    label += $"\n  <size=10><color=#999>{desc}</color></size>";
+                
+                Button btn = UIFactory.CreateGoldButton(buildMenuContainer, $"B_{type}", label, 12, () =>
                 { city.StartBuildingConstruction(ct, cost); buildMenuPanel.SetActive(false); cityPanelDirty = true; });
-                UIFactory.AddLayoutElement(btn.gameObject, 28);
+                UIFactory.AddLayoutElement(btn.gameObject, 38);
+                count++;
             }
+            
+            if (count == 0)
+            {
+                AddInfoRow(buildMenuContainer, "Tous les bâtiments sont déjà construits", Color.gray);
+            }
+            
+            // Cancel button
+            Button cancelBtn = UIFactory.CreateGoldButton(buildMenuContainer, "CancelBuild", "Annuler", 13,
+                () => buildMenuPanel.SetActive(false));
+            UIFactory.AddLayoutElement(cancelBtn.gameObject, 32);
+            
             buildMenuPanel.SetActive(true);
         }
         
