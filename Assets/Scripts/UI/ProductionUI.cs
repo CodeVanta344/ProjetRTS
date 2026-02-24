@@ -16,6 +16,7 @@ namespace NapoleonicWars.UI
         private FactionData playerFaction;
         private NavigationBar navBar;
         private RectTransform contentArea;
+        private GameObject addLinePickerPanel;
 
         public static ProductionUI Create(NavigationBar navBar, CampaignManager manager)
         {
@@ -32,6 +33,25 @@ namespace NapoleonicWars.UI
             return ui;
         }
 
+        private void RebuildContent()
+        {
+            if (contentArea == null) return;
+            // Clear and rebuild
+            Transform scrollParent = contentArea.transform.parent?.parent?.parent; // scroll -> viewport -> content
+            if (scrollParent == null) return;
+            
+            // Destroy old scroll
+            Transform parent = scrollParent.parent;
+            Destroy(scrollParent.gameObject);
+            
+            // Destroy picker if open
+            if (addLinePickerPanel != null) Destroy(addLinePickerPanel);
+            
+            // Refresh player faction
+            playerFaction = campaignManager.GetPlayerFaction();
+            BuildContent(parent);
+        }
+
         private void BuildContent(Transform parent)
         {
             // Scroll view for content
@@ -44,7 +64,10 @@ namespace NapoleonicWars.UI
 
             // === SUMMARY HEADER ===
             int assigned = ProductionManager.GetAssignedMilitaryFactories(playerFaction.factionType);
-            RectTransform summaryRT = UIFactory.CreatePanel(content, "Summary", new Color(0.10f, 0.07f, 0.05f, 0.95f));
+            int totalFactories = playerFaction.militaryFactories;
+            int available = totalFactories - assigned;
+            
+            RectTransform summaryRT = UIFactory.CreatePanel(content, "Summary", UIFactory.CardSurface);
             UIFactory.AddLayoutElement(summaryRT.gameObject, preferredHeight: 50);
             
             HorizontalLayoutGroup summaryHLG = UIFactory.AddHorizontalLayout(summaryRT.gameObject, 20f, new RectOffset(15, 15, 8, 8));
@@ -52,9 +75,15 @@ namespace NapoleonicWars.UI
             summaryHLG.childControlHeight = true;
 
             Text mfText = UIFactory.CreateText(summaryRT, "MF", 
-                $"Manufactures militaires: {assigned}/{playerFaction.militaryFactories}", 
+                $"Manufactures militaires: {assigned}/{totalFactories}", 
                 15, TextAnchor.MiddleLeft, UIFactory.GoldAccent);
             UIFactory.AddLayoutElement(mfText.gameObject, preferredWidth: 300, preferredHeight: 34);
+
+            Color availColor = available > 0 ? UIFactory.ActionGreen : UIFactory.SilverText;
+            Text availText = UIFactory.CreateText(summaryRT, "Avail", 
+                $"Disponibles: {available}", 
+                14, TextAnchor.MiddleLeft, availColor);
+            UIFactory.AddLayoutElement(availText.gameObject, preferredWidth: 150, preferredHeight: 34);
 
             float efficiency = GetAverageEfficiency();
             Text effText = UIFactory.CreateText(summaryRT, "Eff", 
@@ -76,34 +105,190 @@ namespace NapoleonicWars.UI
                 var (stock, demand, production) = summary.ContainsKey(eqType) ? summary[eqType] : (0f, 0f, 0f);
                 int factoriesAssigned = 0;
                 float lineEff = 0f;
+                string lineId = null;
                 foreach (var line in lines)
                 {
                     if (line.equipmentType == eqType)
                     {
                         factoriesAssigned += line.assignedFactories;
                         lineEff = line.efficiency;
+                        lineId = line.lineId;
                     }
                 }
-                CreateEquipmentRow(content, eqType, factoriesAssigned, production, stock, demand, lineEff);
+                CreateEquipmentRow(content, eqType, factoriesAssigned, production, stock, demand, lineEff, lineId, available);
             }
 
-            // === ADD LINE BUTTON ===
-            RectTransform btnRow = UIFactory.CreatePanel(content, "BtnRow", new Color(0.12f, 0.13f, 0.11f, 0.9f));
-            UIFactory.AddLayoutElement(btnRow.gameObject, preferredHeight: 45);
-            HorizontalLayoutGroup btnHLG = UIFactory.AddHorizontalLayout(btnRow.gameObject, 10f, new RectOffset(15, 15, 6, 6));
+            // === ACTION BUTTONS ===
+            UIFactory.CreateSeparator(content);
+            
+            RectTransform btnRow = UIFactory.CreatePanel(content, "BtnRow", UIFactory.CardSurface);
+            UIFactory.AddLayoutElement(btnRow.gameObject, preferredHeight: 50);
+            HorizontalLayoutGroup btnHLG = UIFactory.AddHorizontalLayout(btnRow.gameObject, 12f, new RectOffset(15, 15, 8, 8));
             btnHLG.childControlWidth = false;
             btnHLG.childControlHeight = true;
 
-            Button addBtn = UIFactory.CreateGoldButton(btnRow, "AddLine", "+ Ajouter ligne de production", 13);
-            UIFactory.AddLayoutElement(addBtn.gameObject, preferredWidth: 250, preferredHeight: 32);
+            // "Add production line" button — opens equipment type picker
+            bool canAdd = available > 0;
+            Button addBtn = UIFactory.CreateGoldButton(btnRow, "AddLine", 
+                canAdd ? "+ Ajouter ligne de production" : "⚠ Aucune manufacture disponible", 13, 
+                () => ShowAddLinePicker(parent));
+            UIFactory.AddLayoutElement(addBtn.gameObject, preferredWidth: 280, preferredHeight: 34);
+            addBtn.interactable = canAdd;
 
-            Button adjustBtn = UIFactory.CreateButton(btnRow, "AdjustPri", "Ajuster priorités", 12);
-            UIFactory.AddLayoutElement(adjustBtn.gameObject, preferredWidth: 180, preferredHeight: 32);
+            // "Adjust priorities" button — redistribute factories equally
+            Button adjustBtn = UIFactory.CreateButton(btnRow, "AdjustPri", "⚖ Répartition automatique", 12, 
+                () => AutoDistributeFactories());
+            UIFactory.AddLayoutElement(adjustBtn.gameObject, preferredWidth: 220, preferredHeight: 34);
+            adjustBtn.interactable = lines.Count > 0;
         }
+
+        // ═══════════════════════════════════════════════════════
+        //  ADD PRODUCTION LINE PICKER
+        // ═══════════════════════════════════════════════════════
+
+        private void ShowAddLinePicker(Transform overlayParent)
+        {
+            if (addLinePickerPanel != null) Destroy(addLinePickerPanel);
+
+            // Create picker overlay
+            RectTransform pickerBg = UIFactory.CreateBorderedPanel(overlayParent, "AddLinePicker",
+                UIFactory.DeepCharcoal, UIFactory.EmpireGold, 1.5f);
+            pickerBg.anchorMin = new Vector2(0.25f, 0.2f);
+            pickerBg.anchorMax = new Vector2(0.75f, 0.8f);
+            pickerBg.offsetMin = Vector2.zero;
+            pickerBg.offsetMax = Vector2.zero;
+            addLinePickerPanel = pickerBg.gameObject;
+
+            // Inner layout
+            VerticalLayoutGroup vlg = pickerBg.gameObject.AddComponent<VerticalLayoutGroup>();
+            vlg.spacing = 2f;
+            vlg.padding = new RectOffset(0, 0, 0, 0);
+            vlg.childControlHeight = false;
+            vlg.childForceExpandHeight = false;
+            vlg.childControlWidth = true;
+            vlg.childForceExpandWidth = true;
+
+            // Header
+            RectTransform header = UIFactory.CreateBannerHeader(pickerBg, "Header", "Nouvelle Ligne de Production", 18);
+            UIFactory.AddLayoutElement(header.gameObject, preferredHeight: 44);
+
+            // Close button
+            Button closeBtn = UIFactory.CreateButton(header, "Close", "✕", 14, 
+                () => { Destroy(addLinePickerPanel); addLinePickerPanel = null; });
+            RectTransform closeBtnRT = closeBtn.GetComponent<RectTransform>();
+            closeBtnRT.anchorMin = new Vector2(1, 0);
+            closeBtnRT.anchorMax = Vector2.one;
+            closeBtnRT.offsetMin = new Vector2(-36, 2);
+            closeBtnRT.offsetMax = new Vector2(-4, -2);
+            closeBtn.GetComponent<Image>().color = new Color(0.25f, 0.06f, 0.06f, 0.85f);
+
+            // Instruction
+            Text instr = UIFactory.CreateText(pickerBg, "Instr",
+                "  Sélectionnez un type d'équipement à produire. 1 manufacture sera assignée.", 
+                11, TextAnchor.MiddleLeft, UIFactory.SilverText);
+            UIFactory.AddLayoutElement(instr.gameObject, preferredHeight: 28);
+
+            // Scroll for equipment list
+            var (scroll, scrollContent) = UIFactory.CreateScrollView(pickerBg, "PickerScroll");
+            UIFactory.AddLayoutElement(scroll.gameObject, preferredHeight: 400, flexibleHeight: 1);
+
+            // Get existing lines to show what's already being produced
+            var existingLines = ProductionManager.GetProductionLines(playerFaction.factionType);
+            var producingTypes = new HashSet<EquipmentType>();
+            foreach (var line in existingLines) producingTypes.Add(line.equipmentType);
+
+            // List all equipment types
+            foreach (EquipmentType eqType in System.Enum.GetValues(typeof(EquipmentType)))
+            {
+                EquipmentType capturedType = eqType;
+                bool alreadyProducing = producingTypes.Contains(eqType);
+
+                GameObject row = new GameObject($"Pick_{eqType}");
+                row.transform.SetParent(scrollContent, false);
+                Image rowBg = row.AddComponent<Image>();
+                rowBg.color = alreadyProducing 
+                    ? new Color(0.08f, 0.07f, 0.05f, 0.95f) 
+                    : UIFactory.CardSurface;
+                
+                UIFactory.AddHorizontalLayout(row, 10f, new RectOffset(12, 12, 6, 6));
+                UIFactory.AddLayoutElement(row, preferredHeight: 42);
+
+                // Equipment icon + name
+                string icon = GetEquipmentIcon(eqType);
+                Text nameTxt = UIFactory.CreateText(row.transform, "Name", 
+                    $"{icon}  {GetEquipmentName(eqType)}", 14, TextAnchor.MiddleLeft, 
+                    alreadyProducing ? UIFactory.EmpireGold : UIFactory.Porcelain);
+                nameTxt.fontStyle = FontStyle.Bold;
+                UIFactory.AddLayoutElement(nameTxt.gameObject, flexibleWidth: 1);
+
+                if (alreadyProducing)
+                {
+                    Text status = UIFactory.CreateText(row.transform, "Status", 
+                        "EN PRODUCTION ✓", 11, TextAnchor.MiddleRight, UIFactory.ActionGreen);
+                    UIFactory.AddLayoutElement(status.gameObject, preferredWidth: 130);
+
+                    // Add extra factory button
+                    Button extraBtn = UIFactory.CreateButton(row.transform, "Extra", "+1 Manuf.", 10, () =>
+                    {
+                        // Find existing line and increment
+                        var currentLines = ProductionManager.GetProductionLines(playerFaction.factionType);
+                        foreach (var line in currentLines)
+                        {
+                            if (line.equipmentType == capturedType)
+                            {
+                                line.assignedFactories++;
+                                break;
+                            }
+                        }
+                        Destroy(addLinePickerPanel);
+                        addLinePickerPanel = null;
+                        RebuildContent();
+                    });
+                    UIFactory.AddLayoutElement(extraBtn.gameObject, preferredWidth: 90, preferredHeight: 28);
+                }
+                else
+                {
+                    // Add new line button
+                    Button addBtn = UIFactory.CreateGoldButton(row.transform, "Add", "PRODUIRE", 12, () =>
+                    {
+                        ProductionManager.AddProductionLine(playerFaction.factionType, capturedType, 1);
+                        Destroy(addLinePickerPanel);
+                        addLinePickerPanel = null;
+                        RebuildContent();
+                    });
+                    UIFactory.AddLayoutElement(addBtn.gameObject, preferredWidth: 100, preferredHeight: 28);
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════
+        //  AUTO-DISTRIBUTE FACTORIES
+        // ═══════════════════════════════════════════════════════
+
+        private void AutoDistributeFactories()
+        {
+            var lines = ProductionManager.GetProductionLines(playerFaction.factionType);
+            if (lines.Count == 0) return;
+
+            int totalFactories = playerFaction.militaryFactories;
+            int perLine = Mathf.Max(1, totalFactories / lines.Count);
+            int remainder = totalFactories - (perLine * lines.Count);
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                lines[i].assignedFactories = perLine + (i < remainder ? 1 : 0);
+            }
+
+            RebuildContent();
+        }
+
+        // ═══════════════════════════════════════════════════════
+        //  TABLE HEADER
+        // ═══════════════════════════════════════════════════════
 
         private void CreateTableHeader(Transform parent)
         {
-            RectTransform headerRT = UIFactory.CreatePanel(parent, "TableHeader", new Color(0.16f, 0.18f, 0.15f, 0.95f));
+            RectTransform headerRT = UIFactory.CreatePanel(parent, "TableHeader", UIFactory.HeaderSurface);
             UIFactory.AddLayoutElement(headerRT.gameObject, preferredHeight: 30);
 
             HorizontalLayoutGroup hlg = UIFactory.AddHorizontalLayout(headerRT.gameObject, 4f, new RectOffset(15, 15, 4, 4));
@@ -116,7 +301,8 @@ namespace NapoleonicWars.UI
             AddHeaderCell(headerRT, "/Tour", 70);
             AddHeaderCell(headerRT, "Stock", 80);
             AddHeaderCell(headerRT, "Demande", 80);
-            AddHeaderCell(headerRT, "Statut", 100);
+            AddHeaderCell(headerRT, "Statut", 80);
+            AddHeaderCell(headerRT, "Actions", 100);
         }
 
         private void AddHeaderCell(Transform parent, string label, float width)
@@ -126,27 +312,33 @@ namespace NapoleonicWars.UI
             UIFactory.AddLayoutElement(text.gameObject, preferredWidth: width, preferredHeight: 22);
         }
 
+        // ═══════════════════════════════════════════════════════
+        //  EQUIPMENT ROWS — with +/- factory buttons
+        // ═══════════════════════════════════════════════════════
+
         private void CreateEquipmentRow(Transform parent, EquipmentType type, int factories, 
-            float production, float stock, float demand, float efficiency)
+            float production, float stock, float demand, float efficiency, string lineId, int availableFactories)
         {
             bool hasDeficit = stock < demand && production < demand * 0.05f;
-            Color rowBg = hasDeficit ? new Color(0.20f, 0.06f, 0.06f, 0.90f) : new Color(0.12f, 0.13f, 0.11f, 0.90f);
+            Color rowBg = hasDeficit 
+                ? new Color(0.15f, 0.04f, 0.04f, 0.90f) 
+                : UIFactory.CardSurface;
 
             RectTransform rowRT = UIFactory.CreatePanel(parent, "Row_" + type, rowBg);
-            UIFactory.AddLayoutElement(rowRT.gameObject, preferredHeight: 32);
+            UIFactory.AddLayoutElement(rowRT.gameObject, preferredHeight: 34);
 
             HorizontalLayoutGroup hlg = UIFactory.AddHorizontalLayout(rowRT.gameObject, 4f, new RectOffset(15, 15, 2, 2));
             hlg.childControlWidth = false;
             hlg.childControlHeight = true;
 
             // Equipment name
-            Text nameText = UIFactory.CreateText(rowRT, "Name", GetEquipmentName(type), 13, 
-                TextAnchor.MiddleLeft, UIFactory.TextWhite);
+            Text nameText = UIFactory.CreateText(rowRT, "Name", $"{GetEquipmentIcon(type)} {GetEquipmentName(type)}", 13, 
+                TextAnchor.MiddleLeft, factories > 0 ? UIFactory.Porcelain : UIFactory.SilverText);
             UIFactory.AddLayoutElement(nameText.gameObject, preferredWidth: 180, preferredHeight: 28);
 
             // Factories assigned
             Text factText = UIFactory.CreateText(rowRT, "Fact", factories > 0 ? factories.ToString() : "-", 13, 
-                TextAnchor.MiddleCenter, factories > 0 ? UIFactory.GoldAccent : UIFactory.TextGrey);
+                TextAnchor.MiddleCenter, factories > 0 ? UIFactory.GoldAccent : UIFactory.SilverText);
             UIFactory.AddLayoutElement(factText.gameObject, preferredWidth: 60, preferredHeight: 28);
 
             // Efficiency
@@ -156,32 +348,90 @@ namespace NapoleonicWars.UI
 
             // Per turn
             Text perTurnText = UIFactory.CreateText(rowRT, "PerTurn", production > 0 ? $"{production:F0}" : "-", 13, 
-                TextAnchor.MiddleCenter, new Color(0.5f, 0.9f, 0.5f));
+                TextAnchor.MiddleCenter, production > 0 ? new Color(0.4f, 0.85f, 0.4f) : UIFactory.SilverText);
             UIFactory.AddLayoutElement(perTurnText.gameObject, preferredWidth: 70, preferredHeight: 28);
 
             // Stock
             Text stockText = UIFactory.CreateText(rowRT, "Stock", $"{stock:F0}", 13, 
-                TextAnchor.MiddleCenter, UIFactory.TextWhite);
+                TextAnchor.MiddleCenter, UIFactory.Porcelain);
             UIFactory.AddLayoutElement(stockText.gameObject, preferredWidth: 80, preferredHeight: 28);
 
             // Demand
             Text demandText = UIFactory.CreateText(rowRT, "Demand", $"{demand:F0}", 13, 
-                TextAnchor.MiddleCenter, UIFactory.TextWhite);
+                TextAnchor.MiddleCenter, UIFactory.Porcelain);
             UIFactory.AddLayoutElement(demandText.gameObject, preferredWidth: 80, preferredHeight: 28);
 
             // Status
             string status;
             Color statusColor;
-            if (demand <= 0) { status = "—"; statusColor = UIFactory.TextGrey; }
-            else if (stock >= demand) { status = "OK ✓"; statusColor = new Color(0.3f, 0.9f, 0.3f); }
-            else if (production > 0) { status = "EN COURS"; statusColor = new Color(0.9f, 0.8f, 0.2f); }
-            else { status = "MANQUE!"; statusColor = new Color(1f, 0.3f, 0.3f); }
+            if (demand <= 0) { status = "—"; statusColor = UIFactory.SilverText; }
+            else if (stock >= demand) { status = "✓ OK"; statusColor = new Color(0.3f, 0.85f, 0.3f); }
+            else if (production > 0) { status = "EN COURS"; statusColor = UIFactory.WarningAmber; }
+            else { status = "MANQUE!"; statusColor = UIFactory.DangerRed; }
 
-            Text statusText = UIFactory.CreateText(rowRT, "Status", status, 12, 
+            Text statusText = UIFactory.CreateText(rowRT, "Status", status, 11, 
                 TextAnchor.MiddleCenter, statusColor);
             statusText.fontStyle = FontStyle.Bold;
-            UIFactory.AddLayoutElement(statusText.gameObject, preferredWidth: 100, preferredHeight: 28);
+            UIFactory.AddLayoutElement(statusText.gameObject, preferredWidth: 80, preferredHeight: 28);
+
+            // === ACTION BUTTONS (+/- factories) ===
+            if (factories > 0 && lineId != null)
+            {
+                // Inline +/- buttons
+                string capturedLineId = lineId;
+                EquipmentType capturedType = type;
+
+                // "-" button (remove 1 factory or remove line)
+                Button minusBtn = UIFactory.CreateButton(rowRT, "Minus", "−", 14, () =>
+                {
+                    var currentLines = ProductionManager.GetProductionLines(playerFaction.factionType);
+                    foreach (var line in currentLines)
+                    {
+                        if (line.lineId == capturedLineId)
+                        {
+                            if (line.assignedFactories > 1)
+                                line.assignedFactories--;
+                            else
+                                ProductionManager.RemoveProductionLine(playerFaction.factionType, capturedLineId);
+                            break;
+                        }
+                    }
+                    RebuildContent();
+                });
+                UIFactory.AddLayoutElement(minusBtn.gameObject, preferredWidth: 28, preferredHeight: 24);
+                minusBtn.GetComponent<Image>().color = new Color(0.20f, 0.06f, 0.06f, 0.9f);
+
+                // "+" button (add 1 factory if available)
+                Button plusBtn = UIFactory.CreateButton(rowRT, "Plus", "+", 14, () =>
+                {
+                    var currentLines = ProductionManager.GetProductionLines(playerFaction.factionType);
+                    foreach (var line in currentLines)
+                    {
+                        if (line.lineId == capturedLineId)
+                        {
+                            line.assignedFactories++;
+                            break;
+                        }
+                    }
+                    RebuildContent();
+                });
+                UIFactory.AddLayoutElement(plusBtn.gameObject, preferredWidth: 28, preferredHeight: 24);
+                plusBtn.interactable = availableFactories > 0;
+                plusBtn.GetComponent<Image>().color = new Color(0.06f, 0.15f, 0.06f, 0.9f);
+            }
+            else
+            {
+                // Empty space placeholder for alignment
+                GameObject spacer = new GameObject("ActionSpacer");
+                spacer.transform.SetParent(rowRT, false);
+                spacer.AddComponent<RectTransform>();
+                UIFactory.AddLayoutElement(spacer, preferredWidth: 60);
+            }
         }
+
+        // ═══════════════════════════════════════════════════════
+        //  HELPERS
+        // ═══════════════════════════════════════════════════════
 
         private float GetAverageEfficiency()
         {
@@ -196,6 +446,21 @@ namespace NapoleonicWars.UI
         {
             return campaignManager.Armies ?? new Dictionary<string, ArmyData>();
         }
+
+        private static string GetEquipmentIcon(EquipmentType type) => type switch
+        {
+            EquipmentType.Muskets => "🔫",
+            EquipmentType.Bayonets => "🗡",
+            EquipmentType.Sabres => "⚔",
+            EquipmentType.CannonsLight => "💣",
+            EquipmentType.CannonsHeavy => "💥",
+            EquipmentType.CannonsSiege => "🏰",
+            EquipmentType.Horses => "🐎",
+            EquipmentType.Uniforms => "👔",
+            EquipmentType.Gunpowder => "🧨",
+            EquipmentType.Cannonballs => "⚫",
+            _ => "❓"
+        };
 
         public static string GetEquipmentName(EquipmentType type) => type switch
         {
