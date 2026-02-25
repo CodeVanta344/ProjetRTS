@@ -26,7 +26,8 @@ namespace NapoleonicWars.Campaign
         public string description;
         public TechCategory category;
         public int researchCost;        // Gold cost
-        public int turnsToResearch;
+        public int turnsToResearch;     // Legacy tier indicator (1-6)
+        public int daysToResearch;      // Actual research duration in game days
         public string[] prerequisites;  // Tech IDs required before this can be researched
 
         // Resource costs (paid upfront to START research)
@@ -62,6 +63,8 @@ namespace NapoleonicWars.Campaign
             this.category = cat;
             this.researchCost = cost;
             this.turnsToResearch = turns;
+            // Day-based: tier 1=30d, tier 2=60d, tier 3=90d, tier 4=120d, tier 5=150d, tier 6=200d
+            this.daysToResearch = turns <= 5 ? turns * 30 : 150 + (turns - 5) * 50;
             this.prerequisites = new string[0];
             // Default resource costs scale with gold cost
             this.ironCost = cost / 4;
@@ -73,7 +76,9 @@ namespace NapoleonicWars.Campaign
     public class TechResearchState
     {
         public string techId;
-        public int turnsRemaining;
+        public int turnsRemaining;    // Legacy (kept for compat)
+        public int daysRemaining;     // Actual day countdown
+        public float dayFraction;     // Fractional day accumulator (for speed bonuses)
         public bool completed;
     }
 
@@ -82,6 +87,9 @@ namespace NapoleonicWars.Campaign
         private Dictionary<string, Technology> allTechs = new Dictionary<string, Technology>();
         private Dictionary<string, TechResearchState> researchStates = new Dictionary<string, TechResearchState>();
         private string currentResearchId;
+
+        // Scientists recruited (boost research speed +5% each)
+        public int scientistCount = 0;
 
         // Cached bonuses (recalculated when tech completes)
         public float TotalAccuracyBonus { get; private set; }
@@ -95,8 +103,10 @@ namespace NapoleonicWars.Campaign
         public float TotalMaintenanceReduction { get; private set; }
         public float TotalDiplomacyBonus { get; private set; }
         public string CurrentResearchId => currentResearchId;
-        public int CurrentResearchTurnsLeft => currentResearchId != null && researchStates.ContainsKey(currentResearchId)
-            ? researchStates[currentResearchId].turnsRemaining : 0;
+        public int CurrentResearchDaysLeft => currentResearchId != null && researchStates.ContainsKey(currentResearchId)
+            ? researchStates[currentResearchId].daysRemaining : 0;
+        // Legacy compat
+        public int CurrentResearchTurnsLeft => CurrentResearchDaysLeft;
 
         public TechTree()
         {
@@ -109,11 +119,11 @@ namespace NapoleonicWars.Campaign
             // TIER 1 - BASIC TECHNOLOGIES (Starting Era - Early 1800s)
             // ============================================================================
             
-            // === INFANTRY PROGRESSION I ===
+            // === MILITIA TRAINING (Tier 0-1) ===
             var basicDrill = new Technology("basic_drill", "Basic Drill",
-                "Elementary marching formations. Slight morale improvement.",
-                TechCategory.Military, 200, 2)
-            { moraleBonus = 5f };
+                "Elementary marching formations. Unlocks Trained Militia.",
+                TechCategory.Military, 100, 1)
+            { moraleBonus = 5f, unlocksUnitType = true, unlockedUnit = UnitType.TrainedMilitia };
             Register(basicDrill);
 
             var flintlockMechanism = new Technology("flintlock_mechanism", "Flintlock Mechanism",
@@ -204,9 +214,10 @@ namespace NapoleonicWars.Campaign
             Register(volleyFire);
 
             var platoonSystem = new Technology("platoon_system", "Platoon System",
-                "Flexible unit organization. +10% infantry damage.",
+                "Flexible unit organization. Unlocks Fusiliers.",
                 TechCategory.Military, 450, 3)
-            { damageBonus = 0.10f, prerequisites = new[] { "volley_fire" } };
+            { damageBonus = 0.10f, unlocksUnitType = true, unlockedUnit = UnitType.Fusilier,
+              prerequisites = new[] { "volley_fire" } };
             Register(platoonSystem);
 
             var skirmishTactics = new Technology("skirmish_tactics", "Skirmisher Training",
@@ -258,9 +269,10 @@ namespace NapoleonicWars.Campaign
             Register(hussarTradition);
 
             var dragoonTraining = new Technology("dragoon_training", "Dragoon Training",
-                "Mounted infantry tactics. +10% cavalry flexibility.",
+                "Mounted infantry tactics. Unlocks Dragoons.",
                 TechCategory.Military, 400, 3)
-            { speedBonus = 0.05f, damageBonus = 0.05f, prerequisites = new[] { "carbine_training" } };
+            { unlocksUnitType = true, unlockedUnit = UnitType.Dragoon,
+              speedBonus = 0.05f, damageBonus = 0.05f, prerequisites = new[] { "carbine_training" } };
             Register(dragoonTraining);
 
             // === ECONOMIC PROGRESSION II ===
@@ -333,6 +345,23 @@ namespace NapoleonicWars.Campaign
             { damageBonus = 0.15f, prerequisites = new[] { "skirmish_tactics" } };
             Register(lightInfantryTactics);
 
+            // === NEW: VOLTIGEUR & CHASSEUR ===
+            var voltigeurDoctrine = new Technology("voltigeur_doctrine", "Voltigeur Doctrine",
+                "Elite skirmisher training in the French tradition. Unlocks Voltigeurs.",
+                TechCategory.Military, 700, 4)
+            { unlocksUnitType = true, unlockedUnit = UnitType.Voltigeur,
+              damageBonus = 0.10f, accuracyBonus = 0.10f,
+              prerequisites = new[] { "light_infantry_tactics", "platoon_system" } };
+            Register(voltigeurDoctrine);
+
+            var chasseurTactics = new Technology("chasseur_tactics", "Chasseur Tactics",
+                "Elite light infantry with rifles. Unlocks Chasseurs.",
+                TechCategory.Military, 900, 5)
+            { unlocksUnitType = true, unlockedUnit = UnitType.Chasseur,
+              damageBonus = 0.15f, accuracyBonus = 0.15f,
+              prerequisites = new[] { "voltigeur_doctrine", "combined_arms" } };
+            Register(chasseurTactics);
+
             // === ARTILLERY PROGRESSION III - Royal Academy ===
             var royalArtilleryAcademy = new Technology("royal_artillery_academy", "Royal Artillery Academy",
                 "Premier institution for artillery science. +15% artillery damage. Requires population 15000.",
@@ -377,9 +406,10 @@ namespace NapoleonicWars.Campaign
             Register(lancerTradition);
 
             var heavyCavalryArmor = new Technology("heavy_cavalry_armor", "Cuirassier Armor",
-                "Breastplates for heavy cavalry. +20% cavalry defense.",
+                "Breastplates for heavy cavalry. Unlocks Cuirassiers.",
                 TechCategory.Military, 650, 4)
-            { moraleBonus = 15f, prerequisites = new[] { "shock_tactics" } };
+            { unlocksUnitType = true, unlockedUnit = UnitType.Cuirassier,
+              moraleBonus = 15f, prerequisites = new[] { "shock_tactics" } };
             Register(heavyCavalryArmor);
 
             var cavalryCarbine = new Technology("cavalry_carbine", "Improved Cavalry Carbines",
@@ -710,12 +740,21 @@ namespace NapoleonicWars.Campaign
 
             // Elite Unit Unlocks
             var oldGuard = new Technology("old_guard", "The Old Guard",
-                "Napoleon's immortal veterans. Unlocks elite Guard units.",
+                "Napoleon's immortal veterans. Unlocks Guard Infantry.",
                 TechCategory.Military, 2000, 8)
-            { unlocksUnitType = true, unlockedUnit = UnitType.ImperialGuard,
+            { unlocksUnitType = true, unlockedUnit = UnitType.GuardInfantry,
               accuracyBonus = 0.25f, damageBonus = 0.25f, moraleBonus = 30f,
               prerequisites = new[] { "breech_loading", "royal_military_college" } };
             Register(oldGuard);
+
+            // === NEW: IMPERIAL VETERANS (upgrades Guard to Old Guard) ===
+            var imperialVeterans = new Technology("imperial_veterans", "Imperial Veterans",
+                "The very best of the Guard. Unlocks the Old Guard — the ultimate infantry.",
+                TechCategory.Military, 2500, 10)
+            { unlocksUnitType = true, unlockedUnit = UnitType.OldGuard,
+              accuracyBonus = 0.15f, damageBonus = 0.20f, moraleBonus = 20f,
+              prerequisites = new[] { "old_guard", "military_university" } };
+            Register(imperialVeterans);
 
             var guardCavalry = new Technology("guard_cavalry", "Guard Cavalry",
                 "The finest horsemen in Europe. Unlocks elite cavalry.",
@@ -762,6 +801,74 @@ namespace NapoleonicWars.Campaign
             { moraleBonus = 25f, maintenanceReduction = 0.15f, damageBonus = 0.10f,
               prerequisites = new[] { "star_forts", "indirect_fire" } };
             Register(polygonalForts);
+
+            // === NEW: MAMELUKE TRADITION ===
+            var mamelukeTradition = new Technology("mameluke_tradition", "Mameluke Tradition",
+                "Exotic cavalry from the East. Unlocks Mamelukes — fearsome horsemen.",
+                TechCategory.Military, 2200, 8)
+            { unlocksUnitType = true, unlockedUnit = UnitType.Mameluke,
+              damageBonus = 0.25f, moraleBonus = 20f,
+              prerequisites = new[] { "guard_cavalry", "espionage_network" } };
+            Register(mamelukeTradition);
+
+            // === NEW: SPECIAL UNIT TECHNOLOGIES ===
+            var fieldFortification = new Technology("field_fortification", "Field Fortification",
+                "Training combat engineers. Unlocks Engineers.",
+                TechCategory.Military, 600, 4)
+            { unlocksUnitType = true, unlockedUnit = UnitType.Engineer,
+              moraleBonus = 10f, prerequisites = new[] { "bayonet_charge" } };
+            Register(fieldFortification);
+
+            var siegeEngineering = new Technology("siege_engineering", "Siege Engineering",
+                "Specialized wall-breaching troops. Unlocks Sappers.",
+                TechCategory.Military, 900, 5)
+            { unlocksUnitType = true, unlockedUnit = UnitType.Sapper,
+              damageBonus = 0.15f, prerequisites = new[] { "field_fortification", "gribeauval_system" } };
+            Register(siegeEngineering);
+
+            var navalInfantry = new Technology("naval_infantry", "Naval Infantry Corps",
+                "Marines for coastal operations. Unlocks Marines.",
+                TechCategory.Military, 700, 4)
+            { unlocksUnitType = true, unlockedUnit = UnitType.Marine,
+              damageBonus = 0.10f, moraleBonus = 10f,
+              prerequisites = new[] { "ship_of_the_line", "platoon_system" } };
+            Register(navalInfantry);
+
+            var guerrillaWarfare = new Technology("guerrilla_warfare", "Guerrilla Warfare",
+                "Irregular forces for asymmetric warfare. Unlocks Partisans.",
+                TechCategory.Military, 500, 3)
+            { unlocksUnitType = true, unlockedUnit = UnitType.Partisan,
+              damageBonus = 0.10f, prerequisites = new[] { "light_infantry_tactics", "espionage_network" } };
+            Register(guerrillaWarfare);
+
+            // === NEW: GARRISON CANNON & HORSE ARTILLERY ===
+            var garrisonGuns = new Technology("garrison_guns", "Garrison Artillery",
+                "Fixed defensive cannons. Unlocks Garrison Cannons.",
+                TechCategory.Military, 250, 2)
+            { unlocksUnitType = true, unlockedUnit = UnitType.GarrisonCannon,
+              damageBonus = 0.05f, prerequisites = new[] { "small_artillery_school" } };
+            Register(garrisonGuns);
+
+            var horseArtilleryDoctrine = new Technology("horse_artillery_doctrine", "Horse Artillery Doctrine",
+                "Mobile guns that keep pace with cavalry. Unlocks Horse Artillery.",
+                TechCategory.Military, 750, 4)
+            { unlocksUnitType = true, unlockedUnit = UnitType.HorseArtillery,
+              speedBonus = 0.15f, prerequisites = new[] { "horse_artillery", "shock_tactics" } };
+            Register(horseArtilleryDoctrine);
+
+            var howitzerDesign = new Technology("howitzer_design", "Howitzer Design",
+                "High-angle indirect fire weapons. Unlocks Howitzers.",
+                TechCategory.Military, 850, 5)
+            { unlocksUnitType = true, unlockedUnit = UnitType.Howitzer,
+              damageBonus = 0.15f, prerequisites = new[] { "shrapnel_shell", "elevation_sights" } };
+            Register(howitzerDesign);
+
+            var grandBatteryDoctrine = new Technology("grand_battery_doctrine", "Grand Battery Doctrine",
+                "Massed artillery formations for devastating bombardment. Unlocks Grand Battery.",
+                TechCategory.Military, 1300, 6)
+            { unlocksUnitType = true, unlockedUnit = UnitType.GrandBattery,
+              damageBonus = 0.20f, prerequisites = new[] { "gribeauval_system", "grand_artillery_academy" } };
+            Register(grandBatteryDoctrine);
 
             Debug.Log($"[TechTree] Initialized with {allTechs.Count} technologies");
         }
@@ -813,11 +920,13 @@ namespace NapoleonicWars.Campaign
             researchStates[techId] = new TechResearchState
             {
                 techId = techId,
-                turnsRemaining = tech.turnsToResearch,
+                daysRemaining = tech.daysToResearch,
+                turnsRemaining = tech.turnsToResearch, // Legacy compat
+                dayFraction = 0f,
                 completed = false
             };
 
-            Debug.Log($"[TechTree] Started researching: {tech.name}");
+            Debug.Log($"[TechTree] Started researching: {tech.name} ({tech.daysToResearch} days)");
         }
 
         public bool CanResearch(string techId)
@@ -855,46 +964,105 @@ namespace NapoleonicWars.Campaign
             researchStates[techId] = new TechResearchState
             {
                 techId = techId,
-                turnsRemaining = tech.turnsToResearch,
+                daysRemaining = tech.daysToResearch,
+                turnsRemaining = tech.turnsToResearch, // Legacy compat
+                dayFraction = 0f,
                 completed = false
             };
 
-            Debug.Log($"[TechTree] Started researching: {tech.name} ({tech.turnsToResearch} turns, cost: {tech.researchCost}g + {tech.ironCost} iron + {tech.foodCost} food)");
+            Debug.Log($"[TechTree] Started researching: {tech.name} ({tech.daysToResearch} days, cost: {tech.researchCost}g + {tech.ironCost} iron + {tech.foodCost} food)");
             return true;
         }
 
         /// <summary>
-        /// Call once per turn to advance research.
-        /// Returns the completed Technology if research finished this turn, null otherwise.
+        /// (Legacy) Call once per season to advance research by full season.
+        /// Returns the completed Technology if research finished, null otherwise.
         /// </summary>
         public Technology AdvanceResearch()
+        {
+            // Legacy: advance by 90 days (1 season)
+            return AdvanceDailyResearch(90f);
+        }
+
+        /// <summary>
+        /// Call once per game day to advance research.
+        /// speedMultiplier: total speed from buildings + scientists (1.0 = normal).
+        /// Returns the completed Technology if research finished this day, null otherwise.
+        /// </summary>
+        public Technology AdvanceDailyResearch(float speedMultiplier = 1f)
         {
             if (currentResearchId == null) return null;
             if (!researchStates.ContainsKey(currentResearchId)) return null;
 
             var state = researchStates[currentResearchId];
-            state.turnsRemaining--;
+            
+            // Accumulate fractional days from speed bonus
+            state.dayFraction += speedMultiplier;
+            int daysToAdvance = Mathf.FloorToInt(state.dayFraction);
+            state.dayFraction -= daysToAdvance;
+            
+            state.daysRemaining -= daysToAdvance;
+            state.turnsRemaining = Mathf.CeilToInt(state.daysRemaining / 90f); // Legacy compat
 
-            if (state.turnsRemaining <= 0)
+            if (state.daysRemaining <= 0)
             {
                 state.completed = true;
                 Technology completed = allTechs[currentResearchId];
                 currentResearchId = null;
                 RecalculateBonuses();
-                Debug.Log($"[TechTree] Research complete: {completed.name}!");
+                Debug.Log($"[TechTree] ✅ Research complete: {completed.name}!");
                 return completed;
             }
 
             return null;
         }
 
+        /// <summary>
+        /// Calculate research speed multiplier based on buildings in faction provinces and scientists.
+        /// Base speed = 1.0. Each building/scientist adds a percentage.
+        /// </summary>
+        public static float CalculateResearchSpeedMultiplier(FactionData faction, 
+            Dictionary<string, ProvinceData> provinces)
+        {
+            float multiplier = 1.0f;
+
+            // Count research buildings across all faction provinces
+            foreach (string provId in faction.ownedProvinceIds)
+            {
+                if (!provinces.ContainsKey(provId)) continue;
+                var prov = provinces[provId];
+                foreach (var slot in prov.buildings)
+                {
+                    if (slot.isConstructing) continue;
+                    switch (slot.type)
+                    {
+                        case BuildingType.University:                multiplier += 0.30f; break; // +30%
+                        case BuildingType.SmallArtillerySchool:      multiplier += 0.10f; break; // +10%
+                        case BuildingType.ProvincialArtillerySchool: multiplier += 0.15f; break; // +15%
+                        case BuildingType.RoyalArtilleryAcademy:     multiplier += 0.20f; break; // +20%
+                        case BuildingType.GrandArtilleryAcademy:     multiplier += 0.30f; break; // +30%
+                        case BuildingType.ImperialArtilleryAcademy:  multiplier += 0.40f; break; // +40%
+                        case BuildingType.MilitaryAcademy:           multiplier += 0.15f; break; // +15%
+                        case BuildingType.RoyalMilitaryCollege:      multiplier += 0.25f; break; // +25%
+                        case BuildingType.MilitaryUniversity:        multiplier += 0.40f; break; // +40%
+                    }
+                }
+            }
+
+            // Scientists: +5% each, up to +100%
+            float scientistBonus = Mathf.Min(1.0f, faction.techTree.scientistCount * 0.05f);
+            multiplier += scientistBonus;
+
+            return multiplier;
+        }
+
         public bool IsUnitTypeUnlocked(UnitType unitType)
         {
-            // Base units are always available
-            if (unitType == UnitType.LineInfantry || unitType == UnitType.LightInfantry ||
-                unitType == UnitType.Cavalry || unitType == UnitType.Artillery)
+            // Base units always available (no research needed)
+            if (unitType == UnitType.Militia || unitType == UnitType.MilitiaCavalry)
                 return true;
 
+            // All other units need to be unlocked via research
             foreach (var kvp in researchStates)
             {
                 if (!kvp.Value.completed) continue;

@@ -44,6 +44,7 @@ namespace NapoleonicWars.UI
         // Army panel
         private GameObject armyPanel;
         private Text armyNameText, armySoldiersText, armyMoveText, armyUpkeepText;
+        private Text armyMarchStatusText, armyOrgText, armyRationsText;
         private Transform regimentsContainer;
         private GameObject recruitRow;
 
@@ -108,23 +109,24 @@ namespace NapoleonicWars.UI
             
             // Subscribe to army events
             map3D.OnArmySelected += OnArmySelected;
+            map3D.OnArmyClicked += OnArmyClicked;  // Second click opens panel
             map3D.OnArmyMoveOrdered += OnArmyMoveOrdered;
             map3D.OnBattleTriggered += OnBattleTriggered;
         }
         
         private void OnArmySelected(ArmyData army)
         {
+            // First click: just store selection, DON'T show panel
+            selectedArmyId = army?.armyId;
+            Debug.Log($"[CampaignUI] Army selected (highlight only): {army?.armyName}");
+        }
+        
+        private void OnArmyClicked(ArmyData army)
+        {
+            // Second click: open the army detail panel
             selectedArmyId = army?.armyId;
             armyPanelDirty = true;
-            
-            // Also select the province where the army is
-            if (army != null && !string.IsNullOrEmpty(army.currentProvinceId))
-            {
-                selectedProvinceId = army.currentProvinceId;
-                provincePanelDirty = true;
-            }
-            
-            Debug.Log($"[CampaignUI] Army selected: {army?.armyName}");
+            Debug.Log($"[CampaignUI] Army clicked → opening panel: {army?.armyName}");
         }
         
         private void OnArmyMoveOrdered(ArmyData army, ProvinceData targetProvince)
@@ -474,62 +476,154 @@ namespace NapoleonicWars.UI
             UIFactory.AddLayoutElement(moveHintText.gameObject, 18);
         }
 
-        // ===================== ARMY PANEL =====================
         private void BuildArmyPanel()
         {
-            RectTransform panel = UIFactory.CreateOrnatePanel(canvas.transform, "ArmyPanel",
-                new Color(0.12f, 0.13f, 0.11f, 0.95f));
-            // Position below province panel, above bottom bar
-            panel.anchorMin = new Vector2(0.78f, 0.10f);
+            // Compact right-side panel — not intrusive
+            RectTransform panel = UIFactory.CreateBorderedPanel(canvas.transform, "ArmyPanel",
+                UIFactory.DeepCharcoal, UIFactory.BorderGold, 1.5f);
+            panel.anchorMin = new Vector2(0.74f, 0.08f);
             panel.anchorMax = new Vector2(0.99f, 0.52f);
-            panel.offsetMin = new Vector2(0, 0);
-            panel.offsetMax = new Vector2(0, 0);
+            panel.offsetMin = Vector2.zero;
+            panel.offsetMax = Vector2.zero;
             armyPanel = panel.gameObject;
 
-            // Navigate to inner content in OrnatePanel
-            Transform inner = panel.Find("Inner");
-            UIFactory.AddVerticalLayout(inner.gameObject, 2f, new RectOffset(10, 10, 8, 8));
+            // Inner layout
+            var vlg = panel.gameObject.AddComponent<VerticalLayoutGroup>();
+            vlg.spacing = 0f;
+            vlg.padding = new RectOffset(0, 0, 0, 0);
+            vlg.childControlHeight = true;
+            vlg.childForceExpandHeight = false;
+            vlg.childControlWidth = true;
+            vlg.childForceExpandWidth = true;
 
-            armyNameText = UIFactory.CreateText(inner, "Name", "No army selected", 16, TextAnchor.MiddleLeft, UIFactory.GoldAccent);
+            // === PREMIUM HEADER BANNER ===
+            RectTransform headerBg = UIFactory.CreateGradientPanel(panel, "HeaderBanner",
+                new Color(0.12f, 0.11f, 0.09f), UIFactory.DeepCharcoal);
+            UIFactory.AddLayoutElement(headerBg.gameObject, preferredHeight: 68);
+            UIFactory.AddHorizontalLayout(headerBg.gameObject, 12f, new RectOffset(18, 14, 10, 10));
+
+            // Army icon
+            Text armyIcon = UIFactory.CreateText(headerBg, "Icon", "⚔", 32, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
+            UIFactory.AddLayoutElement(armyIcon.gameObject, preferredWidth: 44);
+
+            // Name + march status column
+            GameObject nameCol = new GameObject("NameCol");
+            nameCol.transform.SetParent(headerBg, false);
+            var nameVlg = nameCol.AddComponent<VerticalLayoutGroup>();
+            nameVlg.spacing = 0f; nameVlg.childForceExpandWidth = true; nameVlg.childForceExpandHeight = false;
+            UIFactory.AddLayoutElement(nameCol, flexibleWidth: 1);
+
+            armyNameText = UIFactory.CreateText(nameCol.transform, "Name", "No army", 24,
+                TextAnchor.MiddleLeft, UIFactory.EmpireGold);
             armyNameText.fontStyle = FontStyle.Bold;
-            Shadow armyShadow = armyNameText.gameObject.AddComponent<Shadow>();
-            armyShadow.effectColor = new Color(0, 0, 0, 0.7f);
-            armyShadow.effectDistance = new Vector2(1f, -1f);
-            UIFactory.AddLayoutElement(armyNameText.gameObject, 24);
 
-            RectTransform sep = UIFactory.CreateOrnamentalSeparator(inner);
-            UIFactory.AddLayoutElement(sep.gameObject, 14);
+            armyMarchStatusText = UIFactory.CreateText(nameCol.transform, "MarchStatus", "", 13,
+                TextAnchor.MiddleLeft, UIFactory.Parchment);
 
-            armySoldiersText = UIFactory.CreateText(inner, "Soldiers", "", 13, TextAnchor.MiddleLeft, UIFactory.ParchmentBeige);
-            UIFactory.AddLayoutElement(armySoldiersText.gameObject, 20);
+            // Close button
+            Button closeBtn = UIFactory.CreateButton(headerBg, "CloseBtn", "✕", 18,
+                () => { selectedArmyId = null; armyPanelDirty = true; });
+            UIFactory.AddLayoutElement(closeBtn.gameObject, preferredWidth: 36, preferredHeight: 36);
+            closeBtn.GetComponent<Image>().color = new Color(0.25f, 0.06f, 0.06f, 0.85f);
 
-            armyMoveText = UIFactory.CreateText(inner, "Move", "", 13, TextAnchor.MiddleLeft, UIFactory.ParchmentBeige);
-            UIFactory.AddLayoutElement(armyMoveText.gameObject, 20);
+            // Gold separator
+            RectTransform hSep = UIFactory.CreateGlowSeparator(panel, "ArmySep", false);
+            UIFactory.AddLayoutElement(hSep.gameObject, preferredHeight: 3);
 
-            armyUpkeepText = UIFactory.CreateText(inner, "Upkeep", "", 13, TextAnchor.MiddleLeft, UIFactory.GoldAccent);
-            UIFactory.AddLayoutElement(armyUpkeepText.gameObject, 20);
+            // === STATS ROW === soldiers | movement | upkeep | organization
+            GameObject statsRow = new GameObject("StatsRow");
+            statsRow.transform.SetParent(panel, false);
+            statsRow.AddComponent<RectTransform>();
+            Image statsBg = statsRow.AddComponent<Image>();
+            statsBg.color = new Color(0.08f, 0.08f, 0.09f, 1f);
+            UIFactory.AddHorizontalLayout(statsRow, 4f, new RectOffset(12, 12, 6, 6));
+            UIFactory.AddLayoutElement(statsRow, preferredHeight: 52);
 
-            Text regHeader = UIFactory.CreateSectionHeader(inner, "RegHeader", "Regiments:", 13);
-            UIFactory.AddLayoutElement(regHeader.transform.parent.gameObject, 22);
+            armySoldiersText = UIFactory.CreateText(statsRow.transform, "Soldiers", "", 15, TextAnchor.MiddleCenter, UIFactory.Porcelain);
+            UIFactory.AddLayoutElement(armySoldiersText.gameObject, flexibleWidth: 1);
 
-            var (scroll, content) = UIFactory.CreateScrollView(inner, "RegimentsScroll");
-            UIFactory.AddLayoutElement(scroll.gameObject, 80, flexibleWidth: 1);
+            armyMoveText = UIFactory.CreateText(statsRow.transform, "Move", "", 15, TextAnchor.MiddleCenter, new Color(0.4f, 0.7f, 0.4f));
+            UIFactory.AddLayoutElement(armyMoveText.gameObject, flexibleWidth: 1);
+
+            armyUpkeepText = UIFactory.CreateText(statsRow.transform, "Upkeep", "", 15, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
+            UIFactory.AddLayoutElement(armyUpkeepText.gameObject, flexibleWidth: 1);
+
+            armyOrgText = UIFactory.CreateText(statsRow.transform, "Org", "", 15, TextAnchor.MiddleCenter, new Color(0.5f, 0.7f, 0.9f));
+            UIFactory.AddLayoutElement(armyOrgText.gameObject, flexibleWidth: 1);
+
+            armyRationsText = UIFactory.CreateText(statsRow.transform, "Rations", "", 15, TextAnchor.MiddleCenter, new Color(0.6f, 0.8f, 0.3f));
+            UIFactory.AddLayoutElement(armyRationsText.gameObject, flexibleWidth: 1);
+
+            // Thin separator
+            RectTransform tSep = UIFactory.CreateSeparator(panel);
+            UIFactory.AddLayoutElement(tSep.gameObject, preferredHeight: 2);
+
+            // === REGIMENTS SECTION ===
+            GameObject regSection = new GameObject("RegSection");
+            regSection.transform.SetParent(panel, false);
+            regSection.AddComponent<RectTransform>();
+            Image regBg = regSection.AddComponent<Image>();
+            regBg.color = new Color(0.06f, 0.06f, 0.07f, 1f);
+            var regVlg = regSection.AddComponent<VerticalLayoutGroup>();
+            regVlg.spacing = 0f;
+            regVlg.padding = new RectOffset(12, 12, 8, 8);
+            regVlg.childControlHeight = true;
+            regVlg.childForceExpandHeight = true;
+            regVlg.childControlWidth = true;
+            regVlg.childForceExpandWidth = true;
+            UIFactory.AddLayoutElement(regSection, flexibleHeight: 1, flexibleWidth: 1);
+
+            // Section header
+            Text regLabel = UIFactory.CreateText(regSection.transform, "RegLabel", "⚜ RÉGIMENTS", 16,
+                TextAnchor.MiddleLeft, UIFactory.EmpireGold);
+            regLabel.fontStyle = FontStyle.Bold;
+            UIFactory.AddLayoutElement(regLabel.gameObject, preferredHeight: 28);
+
+            // Scrollable regiments list
+            var (scroll, content) = UIFactory.CreateScrollView(regSection.transform, "RegimentsScroll");
+            UIFactory.AddLayoutElement(scroll.gameObject, 60, flexibleWidth: 1, flexibleHeight: 1);
+            
+            // Replace the default VerticalLayoutGroup with a GridLayout for square cards
+            var existingVlg = content.GetComponent<VerticalLayoutGroup>();
+            if (existingVlg != null) Object.DestroyImmediate(existingVlg);
+            GridLayoutGroup grid = content.gameObject.AddComponent<GridLayoutGroup>();
+            grid.cellSize = new Vector2(95, 115);
+            grid.spacing = new Vector2(4, 4);
+            grid.padding = new RectOffset(4, 4, 4, 4);
+            grid.childAlignment = TextAnchor.UpperLeft;
+            grid.constraint = GridLayoutGroup.Constraint.Flexible;
+            
             regimentsContainer = content;
 
-            // Recruit row
+            // === RECRUIT ROW ===
             recruitRow = new GameObject("RecruitRow");
-            recruitRow.transform.SetParent(inner, false);
+            recruitRow.transform.SetParent(panel, false);
             recruitRow.AddComponent<RectTransform>();
-            UIFactory.AddHorizontalLayout(recruitRow, 4f);
-            UIFactory.AddLayoutElement(recruitRow, 32);
+            Image recruitBg = recruitRow.AddComponent<Image>();
+            recruitBg.color = new Color(0.08f, 0.07f, 0.06f, 1f);
+            UIFactory.AddHorizontalLayout(recruitRow, 6f, new RectOffset(12, 12, 6, 6));
+            UIFactory.AddLayoutElement(recruitRow, preferredHeight: 40);
 
-            Button btnInf = UIFactory.CreateGoldButton(recruitRow.transform, "BtnInf", "Recruit Infantry", 11, () =>
-                CampaignManager.Instance.RecruitRegiment(selectedArmyId, UnitType.LineInfantry));
-            UIFactory.AddLayoutElement(btnInf.gameObject, 28, flexibleWidth: 1);
+            Button btnInf = UIFactory.CreateGoldButton(recruitRow.transform, "BtnInf", "🔨 Milice (40g)", 11, () =>
+            {
+                var army = CampaignManager.Instance.Armies.ContainsKey(selectedArmyId) ? CampaignManager.Instance.Armies[selectedArmyId] : null;
+                if (army != null) { var city = FindCityInProvince(army.currentProvinceId); city?.StartUnitProduction(UnitType.Militia, 40, true, -1, 10); }
+            });
+            UIFactory.AddLayoutElement(btnInf.gameObject, 34, flexibleWidth: 1);
 
-            Button btnCav = UIFactory.CreateGoldButton(recruitRow.transform, "BtnCav", "Recruit Cavalry", 11, () =>
-                CampaignManager.Instance.RecruitRegiment(selectedArmyId, UnitType.Cavalry));
-            UIFactory.AddLayoutElement(btnCav.gameObject, 28, flexibleWidth: 1);
+            Button btnCav = UIFactory.CreateGoldButton(recruitRow.transform, "BtnCav", "🐴 Cav.Mil (60g)", 11, () =>
+            {
+                var army = CampaignManager.Instance.Armies.ContainsKey(selectedArmyId) ? CampaignManager.Instance.Armies[selectedArmyId] : null;
+                if (army != null) { var city = FindCityInProvince(army.currentProvinceId); city?.StartUnitProduction(UnitType.MilitiaCavalry, 60, true, -1, 20); }
+            });
+            UIFactory.AddLayoutElement(btnCav.gameObject, 34, flexibleWidth: 1);
+
+            Button btnArt = UIFactory.CreateGoldButton(recruitRow.transform, "BtnArt", "💥 Art. (120g)", 11, () =>
+            {
+                var army = CampaignManager.Instance.Armies.ContainsKey(selectedArmyId) ? CampaignManager.Instance.Armies[selectedArmyId] : null;
+                if (army != null) { var city = FindCityInProvince(army.currentProvinceId); city?.StartUnitProduction(UnitType.Artillery, 120, false, -1, 40); }
+            });
+            UIFactory.AddLayoutElement(btnArt.gameObject, 34, flexibleWidth: 1);
 
             armyPanel.SetActive(false);
         }
@@ -676,7 +770,7 @@ namespace NapoleonicWars.UI
                 }
                 else if (slot.isConstructing)
                 {
-                    bName = $"{BuildingInfo.GetName(slot.type)} ({slot.turnsToComplete}t)";
+                    bName = $"{BuildingInfo.GetName(slot.type)} ({slot.turnsToComplete}j)";
                     nameColor = UIFactory.GoldAccent;
                 }
                 else
@@ -728,11 +822,56 @@ namespace NapoleonicWars.UI
             ArmyData army = CampaignManager.Instance.Armies[selectedArmyId];
 
             armyNameText.text = army.armyName;
-            armySoldiersText.text = $"Total: {army.TotalSoldiers} soldiers";
-            armyMoveText.text = $"Movement: {army.movementPoints}/{army.maxMovementPoints}";
-            armyUpkeepText.text = $"Upkeep: {army.MaintenanceCost:F0} gold/turn";
+            
+            // March status line
+            if (army.isMoving && !string.IsNullOrEmpty(army.targetProvinceId))
+            {
+                string targetName = army.targetProvinceId;
+                if (CampaignManager.Instance.Provinces.TryGetValue(army.targetProvinceId, out var tp))
+                    targetName = tp.provinceName;
+                int daysLeft = army.marchDaysRemaining > 0 ? army.marchDaysRemaining : 1;
+                armyMarchStatusText.text = $"En marche vers {targetName} — {daysLeft} jour(s)";
+                armyMarchStatusText.color = UIFactory.WarningAmber;
+            }
+            else if (army.isResting)
+            {
+                armyMarchStatusText.text = "Au repos — récupération";
+                armyMarchStatusText.color = new Color(0.4f, 0.7f, 0.4f);
+            }
+            else
+            {
+                string locName = army.currentProvinceId;
+                if (CampaignManager.Instance.Provinces.TryGetValue(army.currentProvinceId, out var cp))
+                    locName = cp.provinceName;
+                armyMarchStatusText.text = $"Stationné à {locName}";
+                armyMarchStatusText.color = UIFactory.Parchment;
+            }
 
-            // Rebuild regiments list with visual cards
+            // Stat cards with icons
+            armySoldiersText.text = $"{army.TotalSoldiers}\nsoldats";
+            armyMoveText.text = $"{army.movementPoints}/{army.maxMovementPoints}\nmouvement";
+            armyUpkeepText.text = $"{army.MaintenanceCost:F0}\nor/tour";
+            armyOrgText.text = $"{army.organization:F0}%\norganisation";
+
+            // Rations display with color coding
+            float rationPct = army.maxRations > 0 ? army.currentRations / army.maxRations : 0;
+            Color rationColor;
+            string rationPrefix = "";
+            if (army.isStarving)
+            {
+                rationColor = new Color(0.9f, 0.15f, 0.15f); // Red
+                rationPrefix = "\u26a0 ";
+            }
+            else if (army.currentRations <= 5f)
+                rationColor = new Color(0.9f, 0.55f, 0.2f);  // Orange
+            else if (army.currentRations <= 10f)
+                rationColor = new Color(0.9f, 0.8f, 0.2f);   // Yellow
+            else
+                rationColor = new Color(0.5f, 0.8f, 0.3f);   // Green
+            armyRationsText.color = rationColor;
+            armyRationsText.text = $"{rationPrefix}{army.currentRations:F0}/{army.maxRations:F0}\nrations";
+
+            // Rebuild regiments list
             foreach (Transform child in regimentsContainer)
                 Destroy(child.gameObject);
 
@@ -749,176 +888,125 @@ namespace NapoleonicWars.UI
         /// </summary>
         private void CreateRegimentCard(Transform parent, RegimentData reg, int regimentIndex, string armyId)
         {
-            // Card container
-            GameObject card = new GameObject($"RegimentCard_{reg.regimentName}");
+            Color typeColor = GetUnitTypeColor(reg.unitType);
+            string typeIcon = GetUnitTypeIcon(reg.unitType);
+            float strengthRatio = (float)reg.currentSize / reg.maxSize;
+
+            // === SQUARE CARD (90x110) ===
+            GameObject card = new GameObject($"RegCard_{reg.regimentName}");
             card.transform.SetParent(parent, false);
             RectTransform cardRect = card.AddComponent<RectTransform>();
-            cardRect.sizeDelta = new Vector2(0, reg.needsReinforcement ? 105 : 85);
-            
-            // Background image
-            Image bgImage = card.AddComponent<Image>();
-            bgImage.color = reg.isBeingReinforced 
-                ? new Color(0.2f, 0.15f, 0.08f, 0.95f)  // Yellowish tint for reinforcing
-                : new Color(0.16f, 0.18f, 0.15f, 0.9f);
-            
-            // Add border
-            GameObject border = new GameObject("Border");
-            border.transform.SetParent(card.transform, false);
-            RectTransform borderRect = border.AddComponent<RectTransform>();
-            borderRect.anchorMin = Vector2.zero;
-            borderRect.anchorMax = Vector2.one;
-            borderRect.offsetMin = Vector2.zero;
-            borderRect.offsetMax = Vector2.zero;
-            Image borderImg = border.AddComponent<Image>();
-            borderImg.color = reg.isBeingReinforced 
-                ? new Color(0.9f, 0.7f, 0.2f)  // Gold border for reinforcing
-                : GetUnitTypeColor(reg.unitType);
-            borderImg.type = Image.Type.Sliced;
-            
-            // Bring border to front (it will be the outline)
-            border.transform.SetAsFirstSibling();
-            
-            // Content layout - horizontal
-            GameObject content = new GameObject("Content");
-            content.transform.SetParent(card.transform, false);
-            RectTransform contentRect = content.AddComponent<RectTransform>();
-            contentRect.anchorMin = new Vector2(0, 0);
-            contentRect.anchorMax = new Vector2(1, 1);
-            contentRect.offsetMin = new Vector2(4, 4);
-            contentRect.offsetMax = new Vector2(-4, -4);
-            HorizontalLayoutGroup hlg = content.AddComponent<HorizontalLayoutGroup>();
-            hlg.spacing = 8f;
-            hlg.childAlignment = TextAnchor.MiddleLeft;
-            hlg.childControlWidth = false;
-            hlg.childControlHeight = false;
-            
-            // Unit type icon
-            string typeIcon = GetUnitTypeIcon(reg.unitType);
-            Color typeColor = GetUnitTypeColor(reg.unitType);
-            
-            GameObject iconBg = new GameObject("IconBg");
-            iconBg.transform.SetParent(content.transform, false);
-            RectTransform iconBgRect = iconBg.AddComponent<RectTransform>();
-            iconBgRect.sizeDelta = new Vector2(50, reg.needsReinforcement ? 93 : 73);
-            Image iconBgImg = iconBg.AddComponent<Image>();
-            iconBgImg.color = new Color(typeColor.r * 0.3f, typeColor.g * 0.3f, typeColor.b * 0.3f, 0.8f);
-            
-            Text iconText = UIFactory.CreateText(iconBg.transform, "Icon", typeIcon, 28, TextAnchor.MiddleCenter, typeColor);
-            RectTransform iconTextRect = iconText.GetComponent<RectTransform>();
-            iconTextRect.anchorMin = Vector2.zero;
-            iconTextRect.anchorMax = Vector2.one;
-            iconTextRect.offsetMin = Vector2.zero;
-            iconTextRect.offsetMax = Vector2.zero;
-            
-            // Info section - vertical layout
-            GameObject infoSection = new GameObject("InfoSection");
-            infoSection.transform.SetParent(content.transform, false);
-            RectTransform infoRect = infoSection.AddComponent<RectTransform>();
-            infoRect.sizeDelta = new Vector2(140, reg.needsReinforcement ? 93 : 73);
-            VerticalLayoutGroup vlg = infoSection.AddComponent<VerticalLayoutGroup>();
-            vlg.spacing = 2f;
-            vlg.childAlignment = TextAnchor.MiddleLeft;
+            cardRect.sizeDelta = new Vector2(90, 110);
+            Image cardBg = card.AddComponent<Image>();
+            cardBg.color = new Color(0.12f, 0.12f, 0.14f, 0.95f);
+
+            // Left accent stripe (unit type color)
+            GameObject stripe = new GameObject("Stripe");
+            stripe.transform.SetParent(card.transform, false);
+            RectTransform stripeRect = stripe.AddComponent<RectTransform>();
+            stripeRect.anchorMin = new Vector2(0, 0);
+            stripeRect.anchorMax = new Vector2(0, 1);
+            stripeRect.pivot = new Vector2(0, 0.5f);
+            stripeRect.sizeDelta = new Vector2(4, 0);
+            stripeRect.anchoredPosition = Vector2.zero;
+            Image stripeImg = stripe.AddComponent<Image>();
+            stripeImg.color = reg.isBeingReinforced ? UIFactory.GoldAccent : typeColor;
+
+            // === TOP SECTION: Big icon + unit type ===
+            GameObject topSection = new GameObject("Top");
+            topSection.transform.SetParent(card.transform, false);
+            RectTransform topRect = topSection.AddComponent<RectTransform>();
+            topRect.anchorMin = new Vector2(0, 0.55f);
+            topRect.anchorMax = new Vector2(1, 1);
+            topRect.offsetMin = new Vector2(6, 0);
+            topRect.offsetMax = new Vector2(-4, -3);
+            Image topBg = topSection.AddComponent<Image>();
+            topBg.color = new Color(typeColor.r * 0.25f, typeColor.g * 0.25f, typeColor.b * 0.25f, 0.9f);
+
+            // Big centered icon
+            Text iconText = UIFactory.CreateText(topSection.transform, "Icon", typeIcon, 26, TextAnchor.MiddleCenter, typeColor);
+            RectTransform iconRect = iconText.GetComponent<RectTransform>();
+            iconRect.anchorMin = Vector2.zero;
+            iconRect.anchorMax = Vector2.one;
+            iconRect.offsetMin = Vector2.zero;
+            iconRect.offsetMax = Vector2.zero;
+
+            // Unit type label (bottom of top section)
+            Text typeLabel = UIFactory.CreateText(topSection.transform, "TypeLabel", GetUnitTypeName(reg.unitType), 8,
+                TextAnchor.LowerCenter, new Color(typeColor.r, typeColor.g, typeColor.b, 0.8f));
+            RectTransform typeLabelRect = typeLabel.GetComponent<RectTransform>();
+            typeLabelRect.anchorMin = new Vector2(0, 0);
+            typeLabelRect.anchorMax = new Vector2(1, 0.3f);
+            typeLabelRect.offsetMin = new Vector2(2, 1);
+            typeLabelRect.offsetMax = new Vector2(-2, 0);
+
+            // === BOTTOM SECTION: Name + stats ===
+            GameObject botSection = new GameObject("Bot");
+            botSection.transform.SetParent(card.transform, false);
+            RectTransform botRect = botSection.AddComponent<RectTransform>();
+            botRect.anchorMin = new Vector2(0, 0);
+            botRect.anchorMax = new Vector2(1, 0.55f);
+            botRect.offsetMin = new Vector2(6, 3);
+            botRect.offsetMax = new Vector2(-4, 0);
+            VerticalLayoutGroup vlg = botSection.AddComponent<VerticalLayoutGroup>();
+            vlg.spacing = 1f;
+            vlg.padding = new RectOffset(2, 2, 0, 0);
+            vlg.childAlignment = TextAnchor.UpperCenter;
             vlg.childControlWidth = true;
             vlg.childControlHeight = false;
-            
-            // Regiment name
-            Text nameText = UIFactory.CreateText(infoSection.transform, "Name", reg.regimentName, 13, TextAnchor.MiddleLeft, UIFactory.ParchmentBeige);
+
+            // Regiment name (truncated)
+            string displayName = reg.regimentName.Length > 14 ? reg.regimentName.Substring(0, 12) + ".." : reg.regimentName;
+            Text nameText = UIFactory.CreateText(botSection.transform, "Name", displayName, 9, TextAnchor.MiddleCenter, UIFactory.ParchmentBeige);
             nameText.fontStyle = FontStyle.Bold;
-            UIFactory.AddLayoutElement(nameText.gameObject, 18, flexibleWidth: 1);
-            
-            // Rank display
-            string rankLabel = reg.RankDisplayName;
-            float xpProgress = RegimentRankSystem.GetRankProgress(reg.experience);
-            string rankStr = reg.rank >= RegimentRankSystem.TotalRanks - 1 
-                ? $"{rankLabel} (MAX)" 
-                : $"{rankLabel} [{xpProgress * 100:F0}%]";
-            Text rankText = UIFactory.CreateText(infoSection.transform, "Rank", rankStr, 10, TextAnchor.MiddleLeft, reg.RankColor);
-            UIFactory.AddLayoutElement(rankText.gameObject, 14, flexibleWidth: 1);
-            
+            UIFactory.AddLayoutElement(nameText.gameObject, 12, flexibleWidth: 1);
+
+            // Experience stars (compact)
+            int expStars = Mathf.FloorToInt(reg.experience / 20f);
+            string stars = expStars > 0 ? new string('★', Mathf.Clamp(expStars, 0, 5)) : "—";
+            Color starColor = expStars >= 4 ? UIFactory.GoldAccent : new Color(0.7f, 0.7f, 0.5f);
+            Text starsText = UIFactory.CreateText(botSection.transform, "Stars", stars, 8, TextAnchor.MiddleCenter, starColor);
+            UIFactory.AddLayoutElement(starsText.gameObject, 10, flexibleWidth: 1);
+
             // Strength bar
-            GameObject strengthBarBg = new GameObject("StrengthBarBg");
-            strengthBarBg.transform.SetParent(infoSection.transform, false);
-            RectTransform strengthBgRect = strengthBarBg.AddComponent<RectTransform>();
-            strengthBgRect.sizeDelta = new Vector2(0, 14);
-            Image strengthBgImg = strengthBarBg.AddComponent<Image>();
-            strengthBgImg.color = new Color(0.2f, 0.2f, 0.2f, 0.6f);
-            
-            // Strength fill
-            float strengthRatio = (float)reg.currentSize / reg.maxSize;
-            Color strengthColor = strengthRatio > 0.7f ? new Color(0.3f, 0.7f, 0.3f) : 
-                                 strengthRatio > 0.4f ? new Color(0.9f, 0.7f, 0.2f) : 
-                                 new Color(0.8f, 0.3f, 0.2f);
-            
-            GameObject strengthFill = new GameObject("StrengthFill");
-            strengthFill.transform.SetParent(strengthBarBg.transform, false);
-            RectTransform strengthFillRect = strengthFill.AddComponent<RectTransform>();
-            strengthFillRect.anchorMin = Vector2.zero;
-            strengthFillRect.anchorMax = new Vector2(strengthRatio, 1f);
-            strengthFillRect.offsetMin = new Vector2(2, 2);
-            strengthFillRect.offsetMax = new Vector2(-2, -2);
-            Image strengthFillImg = strengthFill.AddComponent<Image>();
-            strengthFillImg.color = strengthColor;
-            
-            // Strength text overlay
-            Text strengthText = UIFactory.CreateText(strengthBarBg.transform, "StrengthText", 
-                $"{reg.currentSize}/{reg.maxSize}", 10, TextAnchor.MiddleCenter, Color.white);
-            RectTransform strengthTextRect = strengthText.GetComponent<RectTransform>();
-            strengthTextRect.anchorMin = Vector2.zero;
-            strengthTextRect.anchorMax = Vector2.one;
-            strengthTextRect.offsetMin = Vector2.zero;
-            strengthTextRect.offsetMax = Vector2.zero;
-            strengthText.fontStyle = FontStyle.Bold;
-            
-            // Reinforcement status or button
+            GameObject barBg = new GameObject("BarBg");
+            barBg.transform.SetParent(botSection.transform, false);
+            Image barBgImg = barBg.AddComponent<Image>();
+            barBgImg.color = new Color(0.08f, 0.08f, 0.08f, 0.8f);
+            UIFactory.AddLayoutElement(barBg, 10, flexibleWidth: 1);
+
+            Color barColor = strengthRatio > 0.7f ? new Color(0.3f, 0.7f, 0.3f) :
+                             strengthRatio > 0.4f ? new Color(0.9f, 0.7f, 0.2f) :
+                             new Color(0.8f, 0.3f, 0.2f);
+
+            GameObject barFill = new GameObject("BarFill");
+            barFill.transform.SetParent(barBg.transform, false);
+            RectTransform fillRect = barFill.AddComponent<RectTransform>();
+            fillRect.anchorMin = Vector2.zero;
+            fillRect.anchorMax = new Vector2(strengthRatio, 1f);
+            fillRect.offsetMin = new Vector2(1, 1);
+            fillRect.offsetMax = new Vector2(-1, -1);
+            Image fillImg = barFill.AddComponent<Image>();
+            fillImg.color = barColor;
+
+            // Strength count
+            Text countText = UIFactory.CreateText(barBg.transform, "Count", $"{reg.currentSize}/{reg.maxSize}", 8, TextAnchor.MiddleCenter, Color.white);
+            RectTransform countRect = countText.GetComponent<RectTransform>();
+            countRect.anchorMin = Vector2.zero;
+            countRect.anchorMax = Vector2.one;
+            countRect.offsetMin = Vector2.zero;
+            countRect.offsetMax = Vector2.zero;
+            countText.fontStyle = FontStyle.Bold;
+
+            // Reinforcement indicator
             if (reg.isBeingReinforced)
             {
-                // Show "Reinforcing... X turns" text
-                Text reinforcingText = UIFactory.CreateText(infoSection.transform, "Reinforcing", 
-                    $"🔄 Reinforcing... {reg.turnsToCompleteReinforcement} turns", 10, TextAnchor.MiddleLeft, UIFactory.GoldAccent);
-                reinforcingText.fontStyle = FontStyle.Italic;
-                UIFactory.AddLayoutElement(reinforcingText.gameObject, 16);
+                Text reinforceText = UIFactory.CreateText(botSection.transform, "Reinforce",
+                    $"🔄 {reg.turnsToCompleteReinforcement}t", 8, TextAnchor.MiddleCenter, UIFactory.GoldAccent);
+                UIFactory.AddLayoutElement(reinforceText.gameObject, 10, flexibleWidth: 1);
             }
-            else if (reg.needsReinforcement)
-            {
-                // Show reinforcement button
-                Button reinforceBtn = UIFactory.CreateGoldButton(infoSection.transform, "BtnReinforce", 
-                    $"Reinforce (+{reg.maxSize - reg.currentSize})", 9, () =>
-                {
-                    CampaignManager.Instance.ReinforceRegiment(armyId, regimentIndex);
-                    armyPanelDirty = true;
-                });
-                UIFactory.AddLayoutElement(reinforceBtn.gameObject, 22, flexibleWidth: 1);
-                
-                // Disable if army not in friendly city with required buildings
-                if (!CanReinforceRegiment(armyId, regimentIndex))
-                {
-                    reinforceBtn.interactable = false;
-                    reinforceBtn.GetComponent<Image>().color = new Color(0.3f, 0.3f, 0.3f, 0.5f);
-                }
-            }
-            
-            // Stats section (experience, morale)
-            GameObject statsSection = new GameObject("StatsSection");
-            statsSection.transform.SetParent(content.transform, false);
-            RectTransform statsRect = statsSection.AddComponent<RectTransform>();
-            statsRect.sizeDelta = new Vector2(60, reg.needsReinforcement ? 78 : 58);
-            VerticalLayoutGroup statsVlg = statsSection.AddComponent<VerticalLayoutGroup>();
-            statsVlg.spacing = 2f;
-            statsVlg.childAlignment = TextAnchor.MiddleLeft;
-            statsVlg.childControlWidth = true;
-            statsVlg.childControlHeight = false;
-            
-            // Experience stars
-            int expStars = Mathf.FloorToInt(reg.experience / 20f);
-            string stars = new string('⭐', Mathf.Clamp(expStars, 0, 5));
-            Text expText = UIFactory.CreateText(statsSection.transform, "Exp", stars, 11, TextAnchor.MiddleLeft, UIFactory.GoldAccent);
-            UIFactory.AddLayoutElement(expText.gameObject, 16);
-            
-            // Unit type name (small)
-            Text typeText = UIFactory.CreateText(statsSection.transform, "Type", GetUnitTypeName(reg.unitType), 10, TextAnchor.MiddleLeft, UIFactory.TextGrey);
-            UIFactory.AddLayoutElement(typeText.gameObject, 14);
-            
-            UIFactory.AddLayoutElement(card, reg.needsReinforcement ? 90 : 70, flexibleWidth: 1);
+
+            UIFactory.AddLayoutElement(card, 110, preferredWidth: 90);
         }
         
         /// <summary>
@@ -951,16 +1039,38 @@ namespace NapoleonicWars.UI
         {
             return type switch
             {
+                // Infantry
+                UnitType.Militia => "🔨",
+                UnitType.TrainedMilitia => "⚔",
                 UnitType.LineInfantry => "⚔",
                 UnitType.LightInfantry => "🏹",
+                UnitType.Fusilier => "🔫",
                 UnitType.Grenadier => "💣",
+                UnitType.Voltigeur => "🎯",
+                UnitType.Chasseur => "🦅",
+                UnitType.GuardInfantry => "🛡",
+                UnitType.OldGuard => "👑",
+                // Cavalry
+                UnitType.MilitiaCavalry => "🐴",
+                UnitType.Dragoon => "🐎",
                 UnitType.Cavalry => "🐎",
                 UnitType.Hussar => "⚡",
                 UnitType.Lancer => "🔱",
-                UnitType.Artillery => "💥",
-                UnitType.ImperialGuard => "🛡",
+                UnitType.Cuirassier => "🛡",
                 UnitType.GuardCavalry => "👑",
-                UnitType.GuardArtillery => "🏰",
+                UnitType.Mameluke => "⚔",
+                // Artillery
+                UnitType.GarrisonCannon => "🏰",
+                UnitType.Artillery => "💥",
+                UnitType.HorseArtillery => "🐎",
+                UnitType.Howitzer => "💣",
+                UnitType.GrandBattery => "⚡",
+                UnitType.GuardArtillery => "👑",
+                // Special
+                UnitType.Engineer => "⚒",
+                UnitType.Sapper => "🔨",
+                UnitType.Marine => "⚓",
+                UnitType.Partisan => "🗡",
                 _ => "⚔"
             };
         }
@@ -969,16 +1079,38 @@ namespace NapoleonicWars.UI
         {
             return type switch
             {
-                UnitType.LineInfantry => new Color(0.2f, 0.5f, 0.2f),      // Green
-                UnitType.LightInfantry => new Color(0.3f, 0.6f, 0.3f),     // Light Green
-                UnitType.Grenadier => new Color(0.5f, 0.3f, 0.2f),         // Brown
-                UnitType.Cavalry => new Color(0.8f, 0.6f, 0.2f),           // Gold
-                UnitType.Hussar => new Color(0.9f, 0.5f, 0.1f),            // Orange
-                UnitType.Lancer => new Color(0.7f, 0.7f, 0.3f),            // Yellow
-                UnitType.Artillery => new Color(0.4f, 0.4f, 0.4f),         // Gray
-                UnitType.ImperialGuard => new Color(1f, 0.85f, 0.3f),      // Bright Gold
-                UnitType.GuardCavalry => new Color(1f, 0.7f, 0.2f),        // Deep Gold
-                UnitType.GuardArtillery => new Color(0.6f, 0.5f, 0.2f),    // Bronze
+                // Infantry — greens to gold
+                UnitType.Militia => new Color(0.5f, 0.5f, 0.4f),
+                UnitType.TrainedMilitia => new Color(0.4f, 0.5f, 0.3f),
+                UnitType.LineInfantry => new Color(0.2f, 0.5f, 0.2f),
+                UnitType.LightInfantry => new Color(0.3f, 0.6f, 0.3f),
+                UnitType.Fusilier => new Color(0.3f, 0.55f, 0.25f),
+                UnitType.Grenadier => new Color(0.5f, 0.3f, 0.2f),
+                UnitType.Voltigeur => new Color(0.4f, 0.6f, 0.2f),
+                UnitType.Chasseur => new Color(0.1f, 0.4f, 0.2f),
+                UnitType.GuardInfantry => new Color(1f, 0.85f, 0.3f),
+                UnitType.OldGuard => new Color(1f, 0.75f, 0.1f),
+                // Cavalry — yellows/oranges
+                UnitType.MilitiaCavalry => new Color(0.6f, 0.5f, 0.3f),
+                UnitType.Dragoon => new Color(0.6f, 0.6f, 0.3f),
+                UnitType.Cavalry => new Color(0.8f, 0.6f, 0.2f),
+                UnitType.Hussar => new Color(0.9f, 0.5f, 0.1f),
+                UnitType.Lancer => new Color(0.7f, 0.7f, 0.3f),
+                UnitType.Cuirassier => new Color(0.7f, 0.7f, 0.7f),
+                UnitType.GuardCavalry => new Color(1f, 0.7f, 0.2f),
+                UnitType.Mameluke => new Color(0.9f, 0.3f, 0.1f),
+                // Artillery — grays/bronze
+                UnitType.GarrisonCannon => new Color(0.5f, 0.5f, 0.5f),
+                UnitType.Artillery => new Color(0.4f, 0.4f, 0.4f),
+                UnitType.HorseArtillery => new Color(0.5f, 0.5f, 0.3f),
+                UnitType.Howitzer => new Color(0.6f, 0.4f, 0.2f),
+                UnitType.GrandBattery => new Color(0.5f, 0.4f, 0.15f),
+                UnitType.GuardArtillery => new Color(0.6f, 0.5f, 0.2f),
+                // Special — blues/purples
+                UnitType.Engineer => new Color(0.3f, 0.5f, 0.7f),
+                UnitType.Sapper => new Color(0.4f, 0.4f, 0.6f),
+                UnitType.Marine => new Color(0.2f, 0.4f, 0.7f),
+                UnitType.Partisan => new Color(0.6f, 0.3f, 0.3f),
                 _ => Color.gray
             };
         }
@@ -987,17 +1119,39 @@ namespace NapoleonicWars.UI
         {
             return type switch
             {
-                UnitType.LineInfantry => "Line Inf.",
-                UnitType.LightInfantry => "Light Inf.",
+                // Infantry
+                UnitType.Militia => "Milice",
+                UnitType.TrainedMilitia => "Milice Entr.",
+                UnitType.LineInfantry => "Inf. Ligne",
+                UnitType.LightInfantry => "Inf. Légère",
+                UnitType.Fusilier => "Fusilier",
                 UnitType.Grenadier => "Grenadier",
-                UnitType.Cavalry => "Cavalry",
-                UnitType.Hussar => "Hussar",
-                UnitType.Lancer => "Lancer",
-                UnitType.Artillery => "Artillery",
-                UnitType.ImperialGuard => "Garde Imp.",
+                UnitType.Voltigeur => "Voltigeur",
+                UnitType.Chasseur => "Chasseur",
+                UnitType.GuardInfantry => "Garde Inf.",
+                UnitType.OldGuard => "Vieille Garde",
+                // Cavalry
+                UnitType.MilitiaCavalry => "Cav. Milice",
+                UnitType.Dragoon => "Dragon",
+                UnitType.Cavalry => "Cavalerie",
+                UnitType.Hussar => "Hussard",
+                UnitType.Lancer => "Lancier",
+                UnitType.Cuirassier => "Cuirassier",
                 UnitType.GuardCavalry => "Garde Cav.",
+                UnitType.Mameluke => "Mamelouk",
+                // Artillery
+                UnitType.GarrisonCannon => "Canon Garn.",
+                UnitType.Artillery => "Artillerie",
+                UnitType.HorseArtillery => "Art. Cheval",
+                UnitType.Howitzer => "Obusier",
+                UnitType.GrandBattery => "Gd. Batterie",
                 UnitType.GuardArtillery => "Garde Art.",
-                _ => "Unknown"
+                // Special
+                UnitType.Engineer => "Ingénieur",
+                UnitType.Sapper => "Sapeur",
+                UnitType.Marine => "Marine",
+                UnitType.Partisan => "Partisan",
+                _ => "Inconnu"
             };
         }
 
@@ -1161,7 +1315,7 @@ namespace NapoleonicWars.UI
             {
                 int cost = BuildingInfo.GetCostGold(type, 0);
                 int time = BuildingInfo.GetBuildTime(type);
-                string label = $"{BuildingInfo.GetName(type)} ({cost}g, {time}t)";
+                string label = $"{BuildingInfo.GetName(type)} ({cost}g, {time}j)";
 
                 BuildingType capturedType = type;
                 Button btn = UIFactory.CreateGoldButton(buildMenuContainer, $"Btn_{type}", label, 14, () =>
@@ -1201,9 +1355,9 @@ namespace NapoleonicWars.UI
         {
             // Main panel — right side, large, ornate with gold border
             RectTransform panel = UIFactory.CreateBorderedPanel(canvas.transform, "CityPanel", 
-                new Color(0.06f, 0.06f, 0.07f, 0.97f), UIFactory.MutedGold, 2f);
-            panel.anchorMin = new Vector2(0.58f, 0.06f);
-            panel.anchorMax = new Vector2(0.99f, 0.94f);
+                UIFactory.DeepCharcoal, UIFactory.BorderGold, 1.5f);
+            panel.anchorMin = new Vector2(0.50f, 0.06f);
+            panel.anchorMax = new Vector2(0.99f, 0.95f);
             panel.offsetMin = Vector2.zero;
             panel.offsetMax = Vector2.zero;
             cityPanel = panel.gameObject;
@@ -1219,14 +1373,14 @@ namespace NapoleonicWars.UI
             
             // === PREMIUM HEADER BANNER ===
             RectTransform headerBg = UIFactory.CreateGradientPanel(panel, "HeaderBanner",
-                new Color(0.14f, 0.12f, 0.10f), new Color(0.06f, 0.06f, 0.07f));
-            UIFactory.AddLayoutElement(headerBg.gameObject, preferredHeight: 56);
+                new Color(0.12f, 0.11f, 0.09f), UIFactory.DeepCharcoal);
+            UIFactory.AddLayoutElement(headerBg.gameObject, preferredHeight: 72);
             
-            UIFactory.AddHorizontalLayout(headerBg.gameObject, 10f, new RectOffset(16, 12, 8, 8));
+            UIFactory.AddHorizontalLayout(headerBg.gameObject, 12f, new RectOffset(20, 16, 10, 10));
             
             // Gold emblem
-            Text emblem = UIFactory.CreateText(headerBg, "Emblem", "🏛", 28, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
-            UIFactory.AddLayoutElement(emblem.gameObject, preferredWidth: 40);
+            Text emblem = UIFactory.CreateText(headerBg, "Emblem", "🏛", 36, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
+            UIFactory.AddLayoutElement(emblem.gameObject, preferredWidth: 48);
             
             // City name + level column
             GameObject nameCol = new GameObject("NameCol");
@@ -1235,18 +1389,18 @@ namespace NapoleonicWars.UI
             nameVlg.spacing = 0f; nameVlg.childForceExpandWidth = true; nameVlg.childForceExpandHeight = false;
             UIFactory.AddLayoutElement(nameCol, flexibleWidth: 1);
             
-            cityNameText = UIFactory.CreateText(nameCol.transform, "CityName", "CITY", 20,
+            cityNameText = UIFactory.CreateText(nameCol.transform, "CityName", "CITY", 26,
                 TextAnchor.MiddleLeft, UIFactory.EmpireGold);
             cityNameText.fontStyle = FontStyle.Bold;
             
-            cityLevelText = UIFactory.CreateText(nameCol.transform, "CityLevel", "", 11,
+            cityLevelText = UIFactory.CreateText(nameCol.transform, "CityLevel", "", 15,
                 TextAnchor.MiddleLeft, UIFactory.Parchment);
             
             // Close button — elegant X
-            Button closeBtn = UIFactory.CreateButton(headerBg, "CloseBtn", "✕", 16,
+            Button closeBtn = UIFactory.CreateButton(headerBg, "CloseBtn", "✕", 20,
                 () => CloseCityPanel());
-            UIFactory.AddLayoutElement(closeBtn.gameObject, preferredWidth: 32, preferredHeight: 32);
-            closeBtn.GetComponent<Image>().color = new Color(0.3f, 0.1f, 0.1f, 0.8f);
+            UIFactory.AddLayoutElement(closeBtn.gameObject, preferredWidth: 40, preferredHeight: 40);
+            closeBtn.GetComponent<Image>().color = new Color(0.25f, 0.06f, 0.06f, 0.85f);
             
             // Gold separator line under header
             RectTransform hSep = UIFactory.CreateGlowSeparator(panel, "HeaderSep", false);
@@ -1257,9 +1411,9 @@ namespace NapoleonicWars.UI
             tabBar.transform.SetParent(panel, false);
             tabBar.AddComponent<RectTransform>();
             Image tabBarBg = tabBar.AddComponent<Image>();
-            tabBarBg.color = new Color(0.05f, 0.05f, 0.06f, 1f);
+            tabBarBg.color = new Color(0.04f, 0.04f, 0.05f, 1f);
             UIFactory.AddHorizontalLayout(tabBar, 2f, new RectOffset(6, 6, 4, 4));
-            UIFactory.AddLayoutElement(tabBar, preferredHeight: 36);
+            UIFactory.AddLayoutElement(tabBar, preferredHeight: 44);
             
             string[] tabNames = { "⚜ VUE", "🏗 BÂTIMENTS", "⚔ MILITAIRE", "🏭 INDUSTRIE" };
             cityTabButtons = new Button[4];
@@ -1267,8 +1421,8 @@ namespace NapoleonicWars.UI
             {
                 int tabIdx = t;
                 cityTabButtons[t] = UIFactory.CreateButton(tabBar.transform, $"Tab_{t}",
-                    tabNames[t], 10, () => { activeCityTab = tabIdx; RefreshCityPanel(); });
-                UIFactory.AddLayoutElement(cityTabButtons[t].gameObject, flexibleWidth: 1, preferredHeight: 28);
+                    tabNames[t], 14, () => { activeCityTab = tabIdx; RefreshCityPanel(); });
+                UIFactory.AddLayoutElement(cityTabButtons[t].gameObject, flexibleWidth: 1, preferredHeight: 36);
             }
             
             // Thin separator under tabs
@@ -1279,9 +1433,12 @@ namespace NapoleonicWars.UI
             GameObject contentArea = new GameObject("ContentArea");
             contentArea.transform.SetParent(panel, false);
             contentArea.AddComponent<RectTransform>();
+            // Opaque dark background to prevent map bleed-through
+            Image contentAreaBg = contentArea.AddComponent<Image>();
+            contentAreaBg.color = new Color(0.06f, 0.06f, 0.07f, 1f);
             var cavlg = contentArea.AddComponent<VerticalLayoutGroup>();
             cavlg.spacing = 0f;
-            cavlg.padding = new RectOffset(12, 12, 8, 8);
+            cavlg.padding = new RectOffset(14, 14, 10, 10);
             cavlg.childControlHeight = true;
             cavlg.childForceExpandHeight = true;
             cavlg.childControlWidth = true;
@@ -1300,6 +1457,18 @@ namespace NapoleonicWars.UI
         {
             var (scroll, content) = UIFactory.CreateScrollView(parent, name);
             UIFactory.AddLayoutElement(scroll.gameObject, 100, flexibleWidth: 1, flexibleHeight: 1);
+            // Force opaque background on scroll view
+            Image scrollBg = scroll.gameObject.GetComponent<Image>();
+            if (scrollBg == null) scrollBg = scroll.gameObject.AddComponent<Image>();
+            scrollBg.color = new Color(0.06f, 0.06f, 0.07f, 1f);
+            // Force opaque viewport
+            Transform viewport = scroll.transform.childCount > 0 ? scroll.transform.GetChild(0) : null;
+            if (viewport != null)
+            {
+                Image vpBg = viewport.GetComponent<Image>();
+                if (vpBg == null) vpBg = viewport.gameObject.AddComponent<Image>();
+                vpBg.color = new Color(0.06f, 0.06f, 0.07f, 1f);
+            }
             return (scroll.gameObject, content);
         }
         
@@ -1345,8 +1514,8 @@ namespace NapoleonicWars.UI
                 bool isActive = (t == activeCityTab);
                 Image tabImg = cityTabButtons[t].GetComponent<Image>();
                 tabImg.color = isActive 
-                    ? new Color(0.18f, 0.14f, 0.08f, 1f)  // warm amber bg
-                    : new Color(0.08f, 0.08f, 0.09f, 1f); // dark bg
+                    ? new Color(0.14f, 0.12f, 0.07f, 1f)  // warm dark amber
+                    : new Color(0.05f, 0.05f, 0.06f, 1f); // near-black
                 
                 Text txt = cityTabButtons[t].GetComponentInChildren<Text>();
                 if (txt != null)
@@ -1399,134 +1568,332 @@ namespace NapoleonicWars.UI
             if (content == null) return;
             ClearContent(content);
             
-            // === HEADER: City Level & Growth ===
+            // Force opaque background
+            Image contentBg = content.gameObject.GetComponent<Image>();
+            if (contentBg == null) contentBg = content.gameObject.AddComponent<Image>();
+            contentBg.color = new Color(0.06f, 0.06f, 0.07f, 1f);
+            
+            // ═══════════════ CITY LEVEL & PROGRESS ═══════════════
             if (city != null)
             {
-                string levelName = CityLevelThresholds.GetLevelName(city.cityLevel);
-                int nextThresh = CityLevelThresholds.GetNextThreshold(city.cityLevel);
-                string growthStr = nextThresh > 0 ? $" → {nextThresh:N0} pop pour Nv.{city.cityLevel + 1}" : " (Max)";
-                AddSectionLabel(content, $"🏛 {levelName.ToUpper()} — NIVEAU {city.cityLevel}{growthStr}");
+                // Level badge row
+                GameObject levelRow = new GameObject("LevelRow");
+                levelRow.transform.SetParent(content, false);
+                UIFactory.AddHorizontalLayout(levelRow, 12f, new RectOffset(16, 16, 10, 6));
+                UIFactory.AddLayoutElement(levelRow, preferredHeight: 50);
+                Image levelBg = levelRow.AddComponent<Image>();
+                levelBg.color = new Color(0.10f, 0.08f, 0.05f, 1f);
                 
-                // Population progress bar
+                // Level badge
+                string levelName = CityLevelThresholds.GetLevelName(city.cityLevel);
+                Text lvlBadge = UIFactory.CreateText(levelRow.transform, "LvlBadge", 
+                    $"NV.{city.cityLevel}", 24, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
+                lvlBadge.fontStyle = FontStyle.Bold;
+                UIFactory.AddLayoutElement(lvlBadge.gameObject, preferredWidth: 60);
+                
+                // Level name + next threshold
+                GameObject lvlInfo = new GameObject("LvlInfo");
+                lvlInfo.transform.SetParent(levelRow.transform, false);
+                var lvlVlg = lvlInfo.AddComponent<VerticalLayoutGroup>();
+                lvlVlg.spacing = 0f; lvlVlg.childForceExpandWidth = true; lvlVlg.childForceExpandHeight = false;
+                UIFactory.AddLayoutElement(lvlInfo, flexibleWidth: 1);
+                
+                Text lvlName = UIFactory.CreateText(lvlInfo.transform, "LvlName", levelName.ToUpper(), 18, 
+                    TextAnchor.MiddleLeft, UIFactory.Porcelain);
+                lvlName.fontStyle = FontStyle.Bold;
+                UIFactory.AddLayoutElement(lvlName.gameObject, preferredHeight: 24);
+                
+                int nextThresh = CityLevelThresholds.GetNextThreshold(city.cityLevel);
+                string progStr = nextThresh > 0 
+                    ? $"{city.population:N0} / {nextThresh:N0} hab." 
+                    : "Population maximale";
+                Text progLabel = UIFactory.CreateText(lvlInfo.transform, "ProgLabel", progStr, 14, 
+                    TextAnchor.MiddleLeft, UIFactory.MutedGold);
+                UIFactory.AddLayoutElement(progLabel.gameObject, preferredHeight: 18);
+                
+                // Progress bar
                 if (nextThresh > 0)
                 {
                     int prevThresh = city.cityLevel > 1 ? CityLevelThresholds.GetNextThreshold(city.cityLevel - 1) : 0;
                     float progress = (float)(city.population - prevThresh) / Mathf.Max(1, nextThresh - prevThresh);
-                    var (bg, fill) = UIFactory.CreateProgressBar(content, "CityProg", UIFactory.EmpireGold);
-                    UIFactory.AddLayoutElement(bg.gameObject, preferredHeight: 10);
-                    fill.GetComponent<RectTransform>().anchorMax = new Vector2(Mathf.Clamp01(progress), 1f);
+                    
+                    GameObject progBar = new GameObject("ProgBar");
+                    progBar.transform.SetParent(content, false);
+                    UIFactory.AddLayoutElement(progBar, preferredHeight: 6);
+                    Image progBarBg = progBar.AddComponent<Image>();
+                    progBarBg.color = new Color(0.15f, 0.13f, 0.10f, 1f);
+                    
+                    GameObject progFill = new GameObject("ProgFill");
+                    progFill.transform.SetParent(progBar.transform, false);
+                    RectTransform fillRT = progFill.AddComponent<RectTransform>();
+                    fillRT.anchorMin = Vector2.zero;
+                    fillRT.anchorMax = new Vector2(Mathf.Clamp01(progress), 1f);
+                    fillRT.offsetMin = Vector2.zero;
+                    fillRT.offsetMax = Vector2.zero;
+                    Image fillImg = progFill.AddComponent<Image>();
+                    fillImg.color = UIFactory.EmpireGold;
                 }
             }
             
-            AddSpacer(content, 4);
-
-            // === IMPERIAL SOCIETY ===
-            UIFactory.CreateSectionHeader(content, "SEC_SOC", "⚜ Société Impériale", 13);
+            AddPremiumSpacer(content, 4);
+            
+            // ═══════════════ POPULATION PYRAMID ═══════════════
+            CreateMilitarySectionHeader(content, "⚜ SOCIÉTÉ IMPÉRIALE", "");
+            
             if (city != null)
             {
-                AddInfoRow(content, "Population totale", $"{city.population:N0} habitants", UIFactory.Porcelain);
+                // Total pop
+                CreateCompactDataRow(content, "Population totale", $"{city.population:N0} habitants", UIFactory.Porcelain, false);
                 
-                // Population classes with visual bars
+                // Population classes with mini progress bars
                 float nobleR = city.populationData.NobleRatio;
                 float bourgeoisR = city.populationData.BourgeoisRatio;
                 float workerR = city.populationData.WorkerRatio;
                 
-                AddInfoRow(content, "  👑 Noblesse", $"{(nobleR * 100):F0}% ({city.populationData.nobles:N0})", new Color(0.7f, 0.5f, 0.9f));
-                AddInfoRow(content, "  💼 Bourgeoisie", $"{(bourgeoisR * 100):F0}% ({city.populationData.bourgeois:N0})", UIFactory.EmpireGold);
-                AddInfoRow(content, "  ⚒ Ouvriers", $"{(workerR * 100):F0}% ({city.populationData.workers:N0})", UIFactory.SilverText);
-                AddInfoRow(content, "Bâtiments", $"{city.buildings.Count}/{city.maxBuildings} ({CityLevelThresholds.GetMaxBuildings(city.cityLevel)} max au Nv.{city.cityLevel})", UIFactory.Parchment);
+                CreatePopulationBar(content, "👑 Noblesse", city.populationData.nobles, nobleR, 
+                    new Color(0.7f, 0.5f, 0.9f));
+                CreatePopulationBar(content, "💼 Bourgeoisie", city.populationData.bourgeois, bourgeoisR, 
+                    UIFactory.EmpireGold);
+                CreatePopulationBar(content, "⚒ Ouvriers", city.populationData.workers, workerR, 
+                    new Color(0.55f, 0.55f, 0.50f));
             }
             else
             {
-                AddInfoRow(content, "Population régionale", $"{prov.population:N0}", UIFactory.Parchment);
+                CreateCompactDataRow(content, "Population régionale", $"{prov.population:N0}", UIFactory.Parchment, false);
             }
             
-            UIFactory.CreateSeparator(content);
+            AddPremiumSpacer(content, 4);
             
-            // === REGIONAL ECONOMY ===
-            UIFactory.CreateSectionHeader(content, "SEC_ECON", "💰 Économie Régionale", 13);
-            AddInfoRow(content, "Or (trésorerie)", $"+{prov.goldIncome:F0}/tour", UIFactory.EmpireGold);
-            AddInfoRow(content, "Nourriture", $"+{prov.foodProduction:F0}/tour", new Color(0.5f, 0.8f, 0.3f));
-            AddInfoRow(content, "Fer (extraction)", $"+{prov.ironProduction:F0}/tour", UIFactory.SilverText);
+            // ═══════════════ ECONOMY ═══════════════
+            CreateMilitarySectionHeader(content, "💰 ÉCONOMIE", "");
+            
+            // Resource grid - 3 columns
+            GameObject resGrid = new GameObject("ResourceGrid");
+            resGrid.transform.SetParent(content, false);
+            UIFactory.AddHorizontalLayout(resGrid, 4f, new RectOffset(8, 8, 4, 4));
+            UIFactory.AddLayoutElement(resGrid, preferredHeight: 50);
+            Image resGridBg = resGrid.AddComponent<Image>();
+            resGridBg.color = new Color(0.08f, 0.08f, 0.09f, 1f);
+            
+            CreateResourceCard(resGrid.transform, "💰", "Or", $"+{prov.goldIncome:F0}", UIFactory.EmpireGold);
+            CreateResourceCard(resGrid.transform, "🌾", "Nourriture", $"+{prov.foodProduction:F0}", new Color(0.5f, 0.8f, 0.3f));
+            CreateResourceCard(resGrid.transform, "⛏", "Fer", $"+{prov.ironProduction:F0}", UIFactory.SilverText);
             
             if (city != null)
             {
-                AddSpacer(content, 2);
-                AddInfoRow(content, "  📦 Stock nourriture", $"{city.storedFood:F0} t", UIFactory.Parchment);
-                AddInfoRow(content, "  📦 Stock fer", $"{city.storedIron:F0}", UIFactory.SilverText);
-                AddInfoRow(content, "  📦 Marchandises", $"{city.storedGoods:F0} unités", UIFactory.EmpireGold);
+                // Stockpile row
+                GameObject stockRow = new GameObject("StockRow");
+                stockRow.transform.SetParent(content, false);
+                UIFactory.AddHorizontalLayout(stockRow, 4f, new RectOffset(8, 8, 2, 2));
+                UIFactory.AddLayoutElement(stockRow, preferredHeight: 22);
+                Image stockBg = stockRow.AddComponent<Image>();
+                stockBg.color = new Color(0.07f, 0.07f, 0.08f, 1f);
                 
-                if (city.industries.Count > 0)
-                {
-                    AddSpacer(content, 2);
-                    float totalGold = 0, totalFood = 0, totalIron = 0;
-                    foreach (var ind in city.industries)
-                    {
-                        totalGold += ind.GetGoldOutput();
-                        totalFood += ind.GetFoodOutput();
-                        totalIron += ind.GetIronOutput();
-                    }
-                    if (totalGold > 0) AddInfoRow(content, "  Industrie → Or", $"+{totalGold:F0}/tour", UIFactory.EmpireGold);
-                    if (totalFood > 0) AddInfoRow(content, "  Industrie → Nourriture", $"+{totalFood:F0}/tour", new Color(0.5f, 0.8f, 0.3f));
-                    if (totalIron > 0) AddInfoRow(content, "  Industrie → Fer", $"+{totalIron:F0}/tour", UIFactory.SilverText);
-                }
+                Text stockLabel = UIFactory.CreateText(stockRow.transform, "Stock", 
+                    $"📦 Stock:  🌾 {city.storedFood:F0}  ⛏ {city.storedIron:F0}  📦 {city.storedGoods:F0}", 
+                    10, TextAnchor.MiddleLeft, new Color(0.45f, 0.45f, 0.42f));
+                UIFactory.AddLayoutElement(stockLabel.gameObject, flexibleWidth: 1);
             }
-
-            UIFactory.CreateSeparator(content);
-
-            // === STRATEGIC DEFENSE ===
-            UIFactory.CreateSectionHeader(content, "SEC_DEF", "🏰 Défense Stratégique", 13);
+            
+            AddPremiumSpacer(content, 4);
+            
+            // ═══════════════ DEFENSE ═══════════════
+            CreateMilitarySectionHeader(content, "🏰 DÉFENSE", "");
+            
             if (city != null)
             {
+                // Public order
                 float order = city.publicOrder;
-                Color orderCol = order > 70 ? Color.green : order > 40 ? UIFactory.EmpireGold : Color.red;
-                AddInfoRow(content, "Ordre public", $"{order:F0}/100", orderCol);
-                var (obg, ofill) = UIFactory.CreateProgressBar(content, "OrderBar", orderCol);
-                UIFactory.AddLayoutElement(obg.gameObject, preferredHeight: 8);
-                ofill.GetComponent<RectTransform>().anchorMax = new Vector2(order / 100f, 1f);
+                Color orderCol = order > 70 ? new Color(0.4f, 0.75f, 0.35f) : order > 40 ? UIFactory.EmpireGold : new Color(0.85f, 0.3f, 0.2f);
+                CreateCompactDataRow(content, "Ordre public", $"{order:F0}/100", orderCol, true, order / 100f);
                 
-                AddInfoRow(content, "Fortification", $"Grade {city.GetFortificationLevel()}", UIFactory.Porcelain);
-                AddInfoRow(content, "Garnison", $"{city.garrisonSize}/{city.maxGarrison} soldats", UIFactory.SilverText);
+                // Fortification stars
+                int fortLevel = city.GetFortificationLevel();
+                string fortStars = new string('★', fortLevel) + new string('☆', 5 - fortLevel);
+                CreateCompactDataRow(content, "Fortification", fortStars, UIFactory.EmpireGold, false);
+                
+                // Garrison
+                CreateCompactDataRow(content, "Garnison", 
+                    $"{city.garrisonSize}/{city.maxGarrison}", UIFactory.SilverText, false);
             }
             else
             {
-                AddInfoRow(content, "Terrain défensif", prov.terrainType.ToString().ToUpper(), UIFactory.Parchment);
-                AddInfoRow(content, "Garnison provinciale", $"{prov.garrisonSize}", UIFactory.SilverText);
+                CreateCompactDataRow(content, "Terrain", prov.terrainType.ToString().ToUpper(), UIFactory.Parchment, false);
+                CreateCompactDataRow(content, "Garnison", $"{prov.garrisonSize}", UIFactory.SilverText, false);
             }
             
-            UIFactory.CreateSeparator(content);
+            AddPremiumSpacer(content, 4);
             
-            // === CULTURE & RELIGION ===
-            UIFactory.CreateSectionHeader(content, "SEC_CUL", "🏛 Culture & Religion", 13);
-            AddInfoRow(content, "Culture", prov.primaryCulture.ToString(), prov.IsCultureAccepted ? Color.green : new Color(1f, 0.5f, 0.2f));
-            AddInfoRow(content, "Religion", prov.primaryReligion.ToString(), prov.IsReligionAccepted ? Color.green : new Color(1f, 0.5f, 0.2f));
+            // ═══════════════ CULTURE & STATUS ═══════════════
+            CreateMilitarySectionHeader(content, "🗺 PROVINCE", "");
+            
+            CreateCompactDataRow(content, "Culture", prov.primaryCulture.ToString(), 
+                prov.IsCultureAccepted ? new Color(0.4f, 0.7f, 0.35f) : new Color(1f, 0.5f, 0.2f), false);
+            CreateCompactDataRow(content, "Religion", prov.primaryReligion.ToString(), 
+                prov.IsReligionAccepted ? new Color(0.4f, 0.7f, 0.35f) : new Color(1f, 0.5f, 0.2f), false);
+            
             if (!prov.IsCultureAccepted)
+                CreateCompactDataRow(content, "Assimilation", $"{(prov.cultureAssimilation * 100):F0}%", UIFactory.MutedGold, true, prov.cultureAssimilation);
+            
+            CreateCompactDataRow(content, "Terrain", prov.terrainType.ToString(), UIFactory.Porcelain, false);
+            
+            // Status indicators — only show if something is wrong
+            Color devColor = prov.devastation < 10 ? new Color(0.4f, 0.7f, 0.35f) : prov.devastation < 40 ? UIFactory.EmpireGold : new Color(0.85f, 0.3f, 0.2f);
+            CreateCompactDataRow(content, "Dévastation", $"{prov.devastation:F0}%", devColor, true, prov.devastation / 100f);
+            
+            Color prosColor = prov.prosperity > 60 ? new Color(0.4f, 0.7f, 0.35f) : prov.prosperity > 30 ? UIFactory.EmpireGold : new Color(0.85f, 0.3f, 0.2f);
+            CreateCompactDataRow(content, "Prospérité", $"{prov.prosperity:F0}%", prosColor, true, prov.prosperity / 100f);
+            
+            // Warnings
+            if (prov.isOccupied) CreateWarningRow(content, "⚠ PROVINCE OCCUPÉE", $"Depuis {prov.turnsOccupied} jours");
+            if (!prov.isCored) CreateWarningRow(content, "⚠ NON ANNEXÉE", "Intégration en cours");
+            if (prov.hasActiveRevolt) CreateWarningRow(content, "🔥 RÉVOLTE ACTIVE", $"{prov.revoltStrength} rebelles");
+        }
+        
+        // ═══ PREMIUM UI HELPERS ═══
+        
+        /// <summary>Compact data row with label/value, optional progress bar</summary>
+        private void CreateCompactDataRow(Transform parent, string label, string value, Color valueColor, bool showBar, float barValue = 0f)
+        {
+            GameObject row = new GameObject($"Data_{label}");
+            row.transform.SetParent(parent, false);
+            UIFactory.AddLayoutElement(row, preferredHeight: showBar ? 36 : 32);
+            Image bg = row.AddComponent<Image>();
+            bg.color = new Color(0.08f, 0.08f, 0.09f, 1f);
+            
+            // Label
+            Text lbl = UIFactory.CreateText(row.transform, "Lbl", label, 15, TextAnchor.MiddleLeft, UIFactory.Parchment);
+            RectTransform lblRT = lbl.GetComponent<RectTransform>();
+            lblRT.anchorMin = new Vector2(0, showBar ? 0.35f : 0);
+            lblRT.anchorMax = new Vector2(0.55f, 1);
+            lblRT.offsetMin = new Vector2(16, 0);
+            lblRT.offsetMax = Vector2.zero;
+            
+            // Value
+            Text val = UIFactory.CreateText(row.transform, "Val", value, 15, TextAnchor.MiddleRight, valueColor);
+            val.fontStyle = FontStyle.Bold;
+            RectTransform valRT = val.GetComponent<RectTransform>();
+            valRT.anchorMin = new Vector2(0.55f, showBar ? 0.35f : 0);
+            valRT.anchorMax = Vector2.one;
+            valRT.offsetMin = Vector2.zero;
+            valRT.offsetMax = new Vector2(-16, 0);
+            
+            // Progress bar
+            if (showBar)
             {
-                AddInfoRow(content, "  Assimilation", $"{(prov.cultureAssimilation * 100):F0}%", UIFactory.SilverText);
-                var (abg, afill) = UIFactory.CreateProgressBar(content, "AssimBar", UIFactory.EmpireGold);
-                UIFactory.AddLayoutElement(abg.gameObject, preferredHeight: 6);
-                afill.GetComponent<RectTransform>().anchorMax = new Vector2(prov.cultureAssimilation, 1f);
+                GameObject barBg = new GameObject("BarBg");
+                barBg.transform.SetParent(row.transform, false);
+                RectTransform barBgRT = barBg.AddComponent<RectTransform>();
+                barBgRT.anchorMin = new Vector2(0.05f, 0.06f);
+                barBgRT.anchorMax = new Vector2(0.95f, 0.30f);
+                barBgRT.offsetMin = Vector2.zero;
+                barBgRT.offsetMax = Vector2.zero;
+                Image barBgImg = barBg.AddComponent<Image>();
+                barBgImg.color = new Color(0.15f, 0.14f, 0.12f, 1f);
+                
+                GameObject barFill = new GameObject("BarFill");
+                barFill.transform.SetParent(barBg.transform, false);
+                RectTransform barFillRT = barFill.AddComponent<RectTransform>();
+                barFillRT.anchorMin = Vector2.zero;
+                barFillRT.anchorMax = new Vector2(Mathf.Clamp01(barValue), 1f);
+                barFillRT.offsetMin = Vector2.zero;
+                barFillRT.offsetMax = Vector2.zero;
+                Image barFillImg = barFill.AddComponent<Image>();
+                barFillImg.color = valueColor;
             }
-            AddInfoRow(content, "Loyauté", $"{prov.loyalty:F0}/100", prov.loyalty > 60 ? Color.green : prov.loyalty > 30 ? UIFactory.EmpireGold : Color.red);
+        }
+        
+        /// <summary>Population class bar with name, count, and visual ratio</summary>
+        private void CreatePopulationBar(Transform parent, string className, int count, float ratio, Color color)
+        {
+            GameObject row = new GameObject($"Pop_{className}");
+            row.transform.SetParent(parent, false);
+            UIFactory.AddLayoutElement(row, preferredHeight: 32);
+            Image bg = row.AddComponent<Image>();
+            bg.color = new Color(0.08f, 0.08f, 0.09f, 1f);
             
-            UIFactory.CreateSeparator(content);
+            // Class name
+            Text lbl = UIFactory.CreateText(row.transform, "Lbl", className, 14, TextAnchor.MiddleLeft, color);
+            RectTransform lblRT = lbl.GetComponent<RectTransform>();
+            lblRT.anchorMin = new Vector2(0, 0);
+            lblRT.anchorMax = new Vector2(0.40f, 1);
+            lblRT.offsetMin = new Vector2(16, 0);
+            lblRT.offsetMax = Vector2.zero;
             
-            // === PROVINCE STATUS ===
-            UIFactory.CreateSectionHeader(content, "SEC_PROV", "🗺 État de la Province", 13);
-            AddInfoRow(content, "Terrain", prov.terrainType.ToString(), UIFactory.Porcelain);
+            // Population bar
+            GameObject barBg = new GameObject("BarBg");
+            barBg.transform.SetParent(row.transform, false);
+            RectTransform barBgRT = barBg.AddComponent<RectTransform>();
+            barBgRT.anchorMin = new Vector2(0.42f, 0.2f);
+            barBgRT.anchorMax = new Vector2(0.80f, 0.8f);
+            barBgRT.offsetMin = Vector2.zero;
+            barBgRT.offsetMax = Vector2.zero;
+            Image barBgImg = barBg.AddComponent<Image>();
+            barBgImg.color = new Color(0.15f, 0.14f, 0.12f, 1f);
             
-            Color devColor = prov.devastation < 10 ? Color.green : prov.devastation < 40 ? UIFactory.EmpireGold : Color.red;
-            AddInfoRow(content, "Dévastation", $"{prov.devastation:F0}%", devColor);
+            GameObject barFill = new GameObject("BarFill");
+            barFill.transform.SetParent(barBg.transform, false);
+            RectTransform barFillRT = barFill.AddComponent<RectTransform>();
+            barFillRT.anchorMin = Vector2.zero;
+            barFillRT.anchorMax = new Vector2(Mathf.Clamp01(ratio), 1f);
+            barFillRT.offsetMin = Vector2.zero;
+            barFillRT.offsetMax = Vector2.zero;
+            Image barFillImg = barFill.AddComponent<Image>();
+            barFillImg.color = color;
             
-            Color prosColor = prov.prosperity > 60 ? Color.green : prov.prosperity > 30 ? UIFactory.EmpireGold : Color.red;
-            AddInfoRow(content, "Prospérité", $"{prov.prosperity:F0}%", prosColor);
+            // Count + percentage
+            Text val = UIFactory.CreateText(row.transform, "Val", $"{(ratio * 100):F0}% ({count:N0})", 13, 
+                TextAnchor.MiddleRight, new Color(color.r * 0.8f, color.g * 0.8f, color.b * 0.8f));
+            RectTransform valRT = val.GetComponent<RectTransform>();
+            valRT.anchorMin = new Vector2(0.80f, 0);
+            valRT.anchorMax = Vector2.one;
+            valRT.offsetMin = Vector2.zero;
+            valRT.offsetMax = new Vector2(-12, 0);
+        }
+        
+        /// <summary>Resource card for the economy grid</summary>
+        private void CreateResourceCard(Transform parent, string icon, string label, string value, Color color)
+        {
+            GameObject card = new GameObject($"Res_{label}");
+            card.transform.SetParent(parent, false);
+            UIFactory.AddLayoutElement(card, flexibleWidth: 1, preferredHeight: 52);
+            Image bg = card.AddComponent<Image>();
+            bg.color = new Color(0.10f, 0.09f, 0.08f, 1f);
             
-            Color revColor = prov.revoltRisk < 20 ? Color.green : prov.revoltRisk < 50 ? UIFactory.EmpireGold : Color.red;
-            AddInfoRow(content, "Risque de révolte", $"{prov.revoltRisk}%", revColor);
+            // Icon
+            Text iconText = UIFactory.CreateText(card.transform, "Icon", icon, 22, TextAnchor.MiddleCenter, color);
+            RectTransform iconRT = iconText.GetComponent<RectTransform>();
+            iconRT.anchorMin = new Vector2(0, 0.5f);
+            iconRT.anchorMax = new Vector2(1, 1);
+            iconRT.offsetMin = Vector2.zero;
+            iconRT.offsetMax = Vector2.zero;
             
-            if (prov.isOccupied) AddInfoRow(content, "⚠ PROVINCE OCCUPÉE", $"Depuis {prov.turnsOccupied} tours", Color.red);
-            if (!prov.isCored) AddInfoRow(content, "⚠ NON ANNEXÉE", "Intégration en cours", new Color(1f, 0.5f, 0.2f));
-            if (prov.hasActiveRevolt) AddInfoRow(content, "🔥 RÉVOLTE ACTIVE", $"{prov.revoltStrength} rebelles", Color.red);
+            // Value
+            Text valText = UIFactory.CreateText(card.transform, "Val", value, 14, TextAnchor.MiddleCenter, color);
+            valText.fontStyle = FontStyle.Bold;
+            RectTransform valRT = valText.GetComponent<RectTransform>();
+            valRT.anchorMin = Vector2.zero;
+            valRT.anchorMax = new Vector2(1, 0.5f);
+            valRT.offsetMin = Vector2.zero;
+            valRT.offsetMax = Vector2.zero;
+        }
+        
+        /// <summary>Red warning row for critical status</summary>
+        private void CreateWarningRow(Transform parent, string title, string detail)
+        {
+            GameObject row = new GameObject("Warning");
+            row.transform.SetParent(parent, false);
+            UIFactory.AddHorizontalLayout(row, 6f, new RectOffset(12, 12, 3, 3));
+            UIFactory.AddLayoutElement(row, preferredHeight: 24);
+            Image bg = row.AddComponent<Image>();
+            bg.color = new Color(0.15f, 0.05f, 0.05f, 1f);
+            
+            Text lbl = UIFactory.CreateText(row.transform, "Warn", title, 11, TextAnchor.MiddleLeft, new Color(0.9f, 0.3f, 0.25f));
+            lbl.fontStyle = FontStyle.Bold;
+            UIFactory.AddLayoutElement(lbl.gameObject, flexibleWidth: 1);
+            
+            Text det = UIFactory.CreateText(row.transform, "Detail", detail, 10, TextAnchor.MiddleRight, new Color(0.7f, 0.3f, 0.25f));
+            UIFactory.AddLayoutElement(det.gameObject, preferredWidth: 120);
         }
         
         // ─── BUILDINGS TAB ────────────────────────────────────────
@@ -1536,24 +1903,38 @@ namespace NapoleonicWars.UI
             if (content == null) return;
             ClearContent(content);
             
-            // Header info
+            // Force opaque background
+            Image contentBg = content.gameObject.GetComponent<Image>();
+            if (contentBg == null) contentBg = content.gameObject.AddComponent<Image>();
+            contentBg.color = new Color(0.06f, 0.06f, 0.07f, 1f);
+            
+            // ═══════════════ HEADER SUMMARY ═══════════════
             if (city != null)
-                AddInfoRow(content, $"🏗 {city.buildings.Count}/{city.maxBuildings} bâtiments — {CityLevelThresholds.GetMaxBuildings(city.cityLevel)} max au Nv.{city.cityLevel}", UIFactory.Parchment);
-            
-            AddSpacer(content, 4);
-            
-            // Use ProvinceData building slots — grouped by category
-            if (prov.buildings != null && prov.buildings.Length > 0)
             {
                 int built = 0, building = 0, empty = 0;
-                foreach (var b in prov.buildings)
-                    if (b.type == BuildingType.Empty) empty++; 
-                    else if (b.isConstructing) building++; 
-                    else built++;
+                if (prov.buildings != null)
+                    foreach (var b in prov.buildings)
+                        if (b.type == BuildingType.Empty) empty++; 
+                        else if (b.isConstructing) building++; 
+                        else built++;
                 
-                AddInfoRow(content, $"Créneaux: {built} construits, {building} en cours, {empty} vides ({prov.buildings.Length} total)", UIFactory.ParchmentBeige);
-                AddSpacer(content, 4);
+                GameObject summaryRow = new GameObject("Summary");
+                summaryRow.transform.SetParent(content, false);
+                UIFactory.AddHorizontalLayout(summaryRow, 4f, new RectOffset(8, 8, 4, 4));
+                UIFactory.AddLayoutElement(summaryRow, preferredHeight: 36);
+                Image summaryBg = summaryRow.AddComponent<Image>();
+                summaryBg.color = new Color(0.10f, 0.08f, 0.05f, 1f);
                 
+                CreateResourceCard(summaryRow.transform, "✅", "Construits", $"{built}", new Color(0.4f, 0.8f, 0.4f));
+                CreateResourceCard(summaryRow.transform, "🔨", "En cours", $"{building}", UIFactory.EmpireGold);
+                CreateResourceCard(summaryRow.transform, "☐", "Vides", $"{empty}", UIFactory.SilverText);
+            }
+            
+            AddPremiumSpacer(content, 4);
+            
+            // ═══════════════ BUILDING SLOTS ═══════════════
+            if (prov.buildings != null && prov.buildings.Length > 0)
+            {
                 // Group by category
                 var categories = new Dictionary<BuildingCategory, List<(int idx, BuildingSlot slot)>>();
                 var emptySlots = new List<int>();
@@ -1561,18 +1942,13 @@ namespace NapoleonicWars.UI
                 for (int i = 0; i < prov.buildings.Length; i++)
                 {
                     BuildingSlot slot = prov.buildings[i];
-                    if (slot.type == BuildingType.Empty)
-                    {
-                        emptySlots.Add(i);
-                        continue;
-                    }
+                    if (slot.type == BuildingType.Empty) { emptySlots.Add(i); continue; }
                     BuildingCategory cat = BuildingInfo.GetCategory(slot.type);
                     if (!categories.ContainsKey(cat))
                         categories[cat] = new List<(int, BuildingSlot)>();
                     categories[cat].Add((i, slot));
                 }
                 
-                // Render each category
                 BuildingCategory[] categoryOrder = { BuildingCategory.Military, BuildingCategory.Economy, 
                     BuildingCategory.Religion, BuildingCategory.Academic, BuildingCategory.Infrastructure };
                 
@@ -1590,106 +1966,127 @@ namespace NapoleonicWars.UI
                     };
                     string catName = cat switch
                     {
-                        BuildingCategory.Military => "Édifices Militaires",
-                        BuildingCategory.Economy => "Économie Royale",
-                        BuildingCategory.Religion => "Lieux Sacrés",
-                        BuildingCategory.Academic => "Académie Impériale",
-                        _ => "Infrastructure Civile"
+                        BuildingCategory.Military => "ÉDIFICES MILITAIRES",
+                        BuildingCategory.Economy => "ÉCONOMIE ROYALE",
+                        BuildingCategory.Religion => "LIEUX SACRÉS",
+                        BuildingCategory.Academic => "ACADÉMIE IMPÉRIALE",
+                        _ => "INFRASTRUCTURE"
                     };
-                    UIFactory.CreateSectionHeader(content, "CAT_" + cat, $"{catIcon} {catName}", 13);
+                    CreateMilitarySectionHeader(content, $"{catIcon} {catName}", "");
                     
                     foreach (var (idx, slot) in categories[cat])
                     {
-                        // Card-style building row
-                        GameObject row = new GameObject("BldRow");
-                        row.transform.SetParent(content, false);
-                        UIFactory.AddHorizontalLayout(row, 8f, new RectOffset(10, 8, 4, 4));
-                        UIFactory.AddLayoutElement(row, preferredHeight: 38);
-                        Image rowBg = row.AddComponent<Image>();
-
                         string name = BuildingInfo.GetName(slot.type);
                         string icon = BuildingInfo.GetIcon(slot.type);
                         
+                        GameObject row = new GameObject($"Bld_{name}");
+                        row.transform.SetParent(content, false);
+                        UIFactory.AddHorizontalLayout(row, 8f, new RectOffset(10, 10, 4, 4));
+                        UIFactory.AddLayoutElement(row, preferredHeight: 44);
+                        Image rowBg = row.AddComponent<Image>();
+                        
+                        // Icon container
+                        GameObject iconC = new GameObject("IconC");
+                        iconC.transform.SetParent(row.transform, false);
+                        UIFactory.AddLayoutElement(iconC, preferredWidth: 32, preferredHeight: 32);
+                        Image iconBg = iconC.AddComponent<Image>();
+                        iconBg.color = new Color(0.12f, 0.10f, 0.08f, 1f);
+                        Text iconTxt = UIFactory.CreateText(iconC.transform, "Icon", icon, 18, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
+                        RectTransform iconTxtRT = iconTxt.GetComponent<RectTransform>();
+                        iconTxtRT.anchorMin = Vector2.zero; iconTxtRT.anchorMax = Vector2.one;
+                        iconTxtRT.offsetMin = Vector2.zero; iconTxtRT.offsetMax = Vector2.zero;
+                        
+                        // Info column
+                        GameObject infoC = new GameObject("Info");
+                        infoC.transform.SetParent(row.transform, false);
+                        var vlg = infoC.AddComponent<VerticalLayoutGroup>();
+                        vlg.spacing = 1f; vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false;
+                        vlg.childControlWidth = true; vlg.childControlHeight = false;
+                        UIFactory.AddLayoutElement(infoC, flexibleWidth: 1);
+                        
                         if (slot.isConstructing)
                         {
-                            rowBg.color = new Color(0.12f, 0.10f, 0.06f, 1f); // warm construction bg
+                            rowBg.color = new Color(0.10f, 0.08f, 0.04f, 1f);
                             
-                            GameObject leftC = new GameObject("Left");
-                            leftC.transform.SetParent(row.transform, false);
-                            var lv = leftC.AddComponent<VerticalLayoutGroup>();
-                            lv.spacing = 1f; lv.childForceExpandWidth = true; lv.childForceExpandHeight = false;
-                            UIFactory.AddLayoutElement(leftC, flexibleWidth: 1);
-                            
-                            Text lbl = UIFactory.CreateText(leftC.transform, "Lbl", $"{icon} {name.ToUpper()}", 11, TextAnchor.MiddleLeft, UIFactory.EmpireGold);
+                            Text lbl = UIFactory.CreateText(infoC.transform, "Name", name.ToUpper(), 12, TextAnchor.MiddleLeft, UIFactory.EmpireGold);
                             lbl.fontStyle = FontStyle.Bold;
-                            UIFactory.CreateText(leftC.transform, "Status", $"  🔨 En construction — {slot.turnsToComplete} tours restants", 9, TextAnchor.MiddleLeft, UIFactory.MutedGold);
+                            UIFactory.AddLayoutElement(lbl.gameObject, preferredHeight: 16);
                             
                             int totalTime = BuildingInfo.GetBuildTime(slot.type);
                             int elapsed = Mathf.Max(0, totalTime - slot.turnsToComplete);
-                            float progress = totalTime > 0 ? (float)elapsed / totalTime : 0f;
-                            AddBuildingProgressBar(content, progress);
+                            Text statusTxt = UIFactory.CreateText(infoC.transform, "Status", 
+                                $"🔨 Construction {elapsed}/{totalTime} — {slot.turnsToComplete}j restants", 
+                                10, TextAnchor.MiddleLeft, UIFactory.MutedGold);
+                            UIFactory.AddLayoutElement(statusTxt.gameObject, preferredHeight: 14);
+                            
+                            // Badge
+                            Text badge = UIFactory.CreateText(row.transform, "Badge", "EN COURS", 9, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
+                            badge.fontStyle = FontStyle.Bold;
+                            UIFactory.AddLayoutElement(badge.gameObject, preferredWidth: 65);
                         }
                         else
                         {
-                            rowBg.color = new Color(0.09f, 0.09f, 0.10f, 1f);
+                            rowBg.color = new Color(0.08f, 0.08f, 0.09f, 1f);
                             
-                            // Icon
-                            Text iconTxt = UIFactory.CreateText(row.transform, "Icon", icon, 18, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
-                            UIFactory.AddLayoutElement(iconTxt.gameObject, preferredWidth: 28);
-                            
-                            // Name + effects
-                            GameObject midC = new GameObject("Mid");
-                            midC.transform.SetParent(row.transform, false);
-                            var mv = midC.AddComponent<VerticalLayoutGroup>();
-                            mv.spacing = 1f; mv.childForceExpandWidth = true; mv.childForceExpandHeight = false;
-                            UIFactory.AddLayoutElement(midC, flexibleWidth: 1);
-                            
-                            Text lbl = UIFactory.CreateText(midC.transform, "Lbl", $"{name.ToUpper()} NV.{slot.level}", 11, TextAnchor.MiddleLeft, UIFactory.Porcelain);
+                            Text lbl = UIFactory.CreateText(infoC.transform, "Name", $"{name.ToUpper()} NV.{slot.level}", 12, TextAnchor.MiddleLeft, UIFactory.Porcelain);
                             lbl.fontStyle = FontStyle.Bold;
+                            UIFactory.AddLayoutElement(lbl.gameObject, preferredHeight: 16);
                             
                             string effects = BuildingInfo.GetEffects(slot.type);
                             if (!string.IsNullOrEmpty(effects) && effects != "No effects")
-                                UIFactory.CreateText(midC.transform, "Eff", $"  ↳ {effects}", 8, TextAnchor.MiddleLeft, new Color(0.5f, 0.5f, 0.45f));
+                            {
+                                Text effTxt = UIFactory.CreateText(infoC.transform, "Eff", $"↳ {effects}", 9, TextAnchor.MiddleLeft, new Color(0.45f, 0.45f, 0.42f));
+                                UIFactory.AddLayoutElement(effTxt.gameObject, preferredHeight: 14);
+                            }
                             
                             // Status badge
-                            Text badge = UIFactory.CreateText(row.transform, "Badge", "✓ ÉTABLI", 9, TextAnchor.MiddleCenter, new Color(0.4f, 0.8f, 0.4f));
-                            UIFactory.AddLayoutElement(badge.gameObject, preferredWidth: 60);
+                            Text badge = UIFactory.CreateText(row.transform, "Badge", "✓ ÉTABLI", 9, TextAnchor.MiddleCenter, new Color(0.4f, 0.75f, 0.4f));
+                            badge.fontStyle = FontStyle.Bold;
+                            UIFactory.AddLayoutElement(badge.gameObject, preferredWidth: 65);
                         }
                     }
-                    AddSpacer(content, 4);
+                    AddPremiumSpacer(content, 4);
                 }
                 
-                // Empty slots — premium style
+                // ═══════════════ EMPTY SLOTS ═══════════════
                 if (emptySlots.Count > 0)
                 {
-                    UIFactory.CreateSectionHeader(content, "SEC_EMPTY", "📦 Créneaux Disponibles", 13);
+                    CreateMilitarySectionHeader(content, "☐ CRÉNEAUX DISPONIBLES", $"{emptySlots.Count} emplacement(s)");
+                    
                     foreach (int idx in emptySlots)
                     {
-                        GameObject row = new GameObject("EmptySlot");
+                        GameObject row = new GameObject($"Empty_{idx}");
                         row.transform.SetParent(content, false);
-                        UIFactory.AddHorizontalLayout(row, 8f, new RectOffset(10, 8, 4, 4));
-                        UIFactory.AddLayoutElement(row, preferredHeight: 34);
+                        UIFactory.AddHorizontalLayout(row, 8f, new RectOffset(10, 10, 4, 4));
+                        UIFactory.AddLayoutElement(row, preferredHeight: 36);
                         Image rowBg = row.AddComponent<Image>();
-                        rowBg.color = new Color(0.07f, 0.07f, 0.08f, 0.8f);
+                        rowBg.color = new Color(0.07f, 0.07f, 0.08f, 1f);
                         
-                        Text lbl = UIFactory.CreateText(row.transform, "Lbl", $"  ☐ CRÉNEAU {idx+1} — Vide", 11, TextAnchor.MiddleLeft, UIFactory.SilverText);
+                        // Dotted icon
+                        GameObject iconC = new GameObject("IconC");
+                        iconC.transform.SetParent(row.transform, false);
+                        UIFactory.AddLayoutElement(iconC, preferredWidth: 32, preferredHeight: 28);
+                        Image iconBg = iconC.AddComponent<Image>();
+                        iconBg.color = new Color(0.10f, 0.10f, 0.10f, 1f);
+                        Text iconTxt = UIFactory.CreateText(iconC.transform, "Icon", "☐", 16, TextAnchor.MiddleCenter, UIFactory.SilverText);
+                        RectTransform iconTxtRT = iconTxt.GetComponent<RectTransform>();
+                        iconTxtRT.anchorMin = Vector2.zero; iconTxtRT.anchorMax = Vector2.one;
+                        iconTxtRT.offsetMin = Vector2.zero; iconTxtRT.offsetMax = Vector2.zero;
+                        
+                        Text lbl = UIFactory.CreateText(row.transform, "Lbl", $"CRÉNEAU {idx+1}", 11, TextAnchor.MiddleLeft, UIFactory.SilverText);
                         UIFactory.AddLayoutElement(lbl.gameObject, flexibleWidth: 1);
                         
-                        Button btn = UIFactory.CreateButton(row.transform, "Build", "CONSTRUIRE", 9, () =>
+                        Button btn = UIFactory.CreateGoldButton(row.transform, "Build", "CONSTRUIRE", 10, () =>
                         {
                             if (city != null) ShowCityBuildPicker(city);
                         });
-                        UIFactory.AddLayoutElement(btn.gameObject, preferredWidth: 90, preferredHeight: 24);
-                        btn.GetComponent<Image>().color = new Color(0.15f, 0.12f, 0.06f);
+                        UIFactory.AddLayoutElement(btn.gameObject, preferredWidth: 90, preferredHeight: 28);
                     }
                 }
             }
             else if (city != null)
             {
-                AddInfoRow(content, $"Bâtiments: {city.buildings.Count}/{city.maxBuildings}", UIFactory.ParchmentBeige);
-                AddSpacer(content, 4);
-                
-                // Group CityData buildings by category
+                // Fallback for CityData buildings
                 var categories = new Dictionary<BuildingCategory, List<CityBuilding>>();
                 foreach (var bld in city.buildings)
                 {
@@ -1705,7 +2102,6 @@ namespace NapoleonicWars.UI
                 foreach (var cat in categoryOrder)
                 {
                     if (!categories.ContainsKey(cat)) continue;
-                    
                     string catName = cat switch
                     {
                         BuildingCategory.Military => "⚔ MILITAIRE",
@@ -1714,76 +2110,57 @@ namespace NapoleonicWars.UI
                         BuildingCategory.Academic => "🏛 ACADÉMIE",
                         _ => "🔧 INFRASTRUCTURE"
                     };
-                    AddSectionLabel(content, catName);
+                    CreateMilitarySectionHeader(content, catName, "");
                     
                     foreach (var bld in categories[cat])
                     {
                         string bIcon = BuildingInfo.GetIcon(bld.buildingType);
                         string bName = BuildingInfo.GetName(bld.buildingType);
-                        
-                        if (bld.isConstructed)
-                        {
-                            AddInfoRow(content, $"  {bIcon} {bName} Nv.{bld.level} — Établi", new Color(0.4f, 0.8f, 0.4f));
-                            string effects = BuildingInfo.GetEffects(bld.buildingType);
-                            if (!string.IsNullOrEmpty(effects) && effects != "No effects")
-                                AddInfoRow(content, $"    ↳ {effects}", new Color(0.55f, 0.55f, 0.5f), 10);
-                        }
-                        else if (bld.isConstructing)
-                        {
-                            AddInfoRow(content, $"  {bIcon} {bName} Nv.{bld.level} — 🔨 Construction ({bld.constructionTurnsRemaining}t)", UIFactory.EmpireGold);
-                            int totalTime = BuildingInfo.GetBuildTime(bld.buildingType);
-                            int elapsed = Mathf.Max(0, totalTime - bld.constructionTurnsRemaining);
-                            float progress = totalTime > 0 ? (float)elapsed / totalTime : 0f;
-                            AddBuildingProgressBar(content, progress);
-                        }
-                        else
-                        {
-                            AddInfoRow(content, $"  {bIcon} {bName} Nv.{bld.level} — Planifié", new Color(0.5f, 0.5f, 0.45f));
-                        }
+                        Color statusCol = bld.isConstructed ? new Color(0.4f, 0.75f, 0.4f) : 
+                                          bld.isConstructing ? UIFactory.EmpireGold : UIFactory.SilverText;
+                        string statusStr = bld.isConstructed ? "✓ ÉTABLI" : 
+                                           bld.isConstructing ? $"🔨 {bld.constructionTurnsRemaining}j" : "Planifié";
+                        CreateCompactDataRow(content, $"{bIcon} {bName} NV.{bld.level}", statusStr, statusCol, false);
                     }
-                    AddSpacer(content, 4);
+                    AddPremiumSpacer(content, 4);
                 }
                 
                 int emptyCount = city.maxBuildings - city.buildings.Count;
                 if (emptyCount > 0)
                 {
-                    AddSectionLabel(content, "📦 CRÉNEAUX VIDES");
+                    CreateMilitarySectionHeader(content, "☐ CRÉNEAUX VIDES", $"{emptyCount} emplacement(s)");
                     for (int s = 0; s < emptyCount; s++)
                     {
                         GameObject row = new GameObject("EmptySlot");
                         row.transform.SetParent(content, false);
-                        row.AddComponent<RectTransform>();
-                        UIFactory.AddHorizontalLayout(row, 4f, new RectOffset(10, 8, 2, 2));
-                        UIFactory.AddLayoutElement(row, 30);
+                        UIFactory.AddHorizontalLayout(row, 8f, new RectOffset(10, 10, 3, 3));
+                        UIFactory.AddLayoutElement(row, preferredHeight: 32);
                         Image rowBg = row.AddComponent<Image>();
-                        rowBg.color = new Color(0.07f, 0.07f, 0.08f, 0.8f);
+                        rowBg.color = new Color(0.07f, 0.07f, 0.08f, 1f);
                         
-                        UIFactory.CreateText(row.transform, "Lbl", $"  ☐ Créneau vide", 11, TextAnchor.MiddleLeft, UIFactory.SilverText);
+                        Text lbl = UIFactory.CreateText(row.transform, "Lbl", $"☐ CRÉNEAU {s+1}", 11, TextAnchor.MiddleLeft, UIFactory.SilverText);
+                        UIFactory.AddLayoutElement(lbl.gameObject, flexibleWidth: 1);
                         
-                        Button btn = UIFactory.CreateButton(row.transform, "Build", "CONSTRUIRE", 9, () =>
-                        {
-                            ShowCityBuildPicker(city);
-                        });
-                        UIFactory.AddLayoutElement(btn.gameObject, preferredWidth: 90, preferredHeight: 24);
-                        btn.GetComponent<Image>().color = new Color(0.15f, 0.12f, 0.06f);
+                        Button btn = UIFactory.CreateGoldButton(row.transform, "Build", "CONSTRUIRE", 10, () => ShowCityBuildPicker(city));
+                        UIFactory.AddLayoutElement(btn.gameObject, preferredWidth: 90, preferredHeight: 26);
                     }
                 }
             }
             else
             {
-                AddInfoRow(content, "Aucune donnée de bâtiment disponible", Color.gray);
+                CreateCompactDataRow(content, "Aucune donnée", "—", UIFactory.SilverText, false);
             }
             
-            // Production queue
+            // ═══════════════ PRODUCTION QUEUE ═══════════════
             if (city != null && city.productionQueue.Count > 0)
             {
-                AddSpacer(content, 6);
-                UIFactory.CreateSectionHeader(content, "SEC_QUEUE", "📋 File de Production", 13);
+                AddPremiumSpacer(content, 6);
+                CreateMilitarySectionHeader(content, "📋 FILE DE PRODUCTION", "");
                 foreach (var item in city.productionQueue)
                 {
-                    string n = item.itemType == ProductionItemType.Building ? "Bâtiment" :
-                              item.itemType == ProductionItemType.Unit ? item.unitType.ToString() : "Marchandises";
-                    AddInfoRow(content, $"  {n} — {item.turnsRemaining} tours", UIFactory.EmpireGold);
+                    string n = item.itemType == ProductionItemType.Building ? "🏗 Bâtiment" :
+                              item.itemType == ProductionItemType.Unit ? $"⚔ {item.unitType}" : "📦 Marchandises";
+                    CreateCompactDataRow(content, n, $"⏱ {item.turnsRemaining}j", UIFactory.EmpireGold, false);
                 }
             }
         }
@@ -1865,7 +2242,7 @@ namespace NapoleonicWars.UI
                     canAfford ? UIFactory.Porcelain : UIFactory.SilverText);
                 nameLbl.fontStyle = FontStyle.Bold;
                 
-                UIFactory.CreateText(midCol.transform, "Cost", $"💰 {cost}g  ⏱ {time} tours", 9, TextAnchor.MiddleLeft, UIFactory.MutedGold);
+                UIFactory.CreateText(midCol.transform, "Cost", $"💰 {cost}g  ⏱ {time} jours", 9, TextAnchor.MiddleLeft, UIFactory.MutedGold);
                 
                 if (!string.IsNullOrEmpty(desc))
                     UIFactory.CreateText(midCol.transform, "Desc", desc, 8, TextAnchor.MiddleLeft, new Color(0.5f, 0.5f, 0.45f));
@@ -1907,135 +2284,334 @@ namespace NapoleonicWars.UI
             
             FactionData playerFac = CampaignManager.Instance?.GetPlayerFaction();
             
-            // === MILITIA — Toujours disponible ===
-            UIFactory.CreateSectionHeader(content, "SEC_MIL_MIL", "⚔ Milice Locale", 13);
-            AddInfoRow(content, "Recrutement basique — pas besoin de caserne", UIFactory.SilverText, 10);
-            AddSpacer(content, 2);
-            CreateMilitaryUnitRow(content, city, playerFac, "Milice", "🗡", UnitType.LineInfantry, 30, 5, 1, true, "Milice de base — peu efficace mais toujours disponible");
+            // Dark opaque background for the whole content area
+            Image contentBg = content.gameObject.GetComponent<Image>();
+            if (contentBg == null) contentBg = content.gameObject.AddComponent<Image>();
+            contentBg.color = new Color(0.06f, 0.06f, 0.07f, 1f);
             
-            UIFactory.CreateSeparator(content);
+            // ═══════════════════════ MILICE ═══════════════════════
+            CreateMilitarySectionHeader(content, "🗡 MILICE LOCALE", "Recrutement sans caserne");
+            CreateMilitaryUnitRow(content, city, playerFac, "Milice", "🗡", UnitType.Militia, 
+                40, 8, 3, true, "250 hommes • mousquets basiques", 250);
+            CreateMilitaryUnitRow(content, city, playerFac, "Milice entraînée", "🗡", UnitType.TrainedMilitia, 
+                60, 12, 5, true, "200 hommes • meilleur moral", 200);
             
-            // === INFANTRY — Requires Barracks ===
-            UIFactory.CreateSectionHeader(content, "SEC_MIL_INF", "🎖 Infanterie Régulière", 13);
-            if (!hasBarracks)
-            {
-                AddInfoRow(content, "⚠ CASERNE REQUISE pour recruter l'infanterie régulière", Color.red, 10);
-                AddSpacer(content, 2);
-            }
-            CreateMilitaryUnitRow(content, city, playerFac, "Infanterie de ligne", "🔫", UnitType.LineInfantry, 100, 15, 2, hasBarracks, "Mousquets: 80, Uniformes: 60");
-            CreateMilitaryUnitRow(content, city, playerFac, "Infanterie légère", "🏹", UnitType.LightInfantry, 80, 10, 2, hasBarracks, "Mousquets: 60, Uniformes: 40");
-            CreateMilitaryUnitRow(content, city, playerFac, "Grenadier", "💣", UnitType.Grenadier, 150, 25, 3, hasBarracks, "Mousquets: 100, Bayonnettes: 80, Uniformes: 60");
+            AddPremiumSpacer(content, 6);
             
-            UIFactory.CreateSeparator(content);
+            // ═══════════════════════ INFANTRY ═══════════════════════
+            CreateMilitarySectionHeader(content, "🎖 INFANTERIE RÉGULIÈRE", 
+                hasBarracks ? "Caserne opérationnelle" : "⚠ CASERNE REQUISE");
             
-            // === CAVALRY — Requires Stables ===
-            UIFactory.CreateSectionHeader(content, "SEC_MIL_CAV", "🏇 Cavalerie", 13);
-            if (!hasStables)
-            {
-                AddInfoRow(content, "⚠ ÉCURIES REQUISES pour recruter la cavalerie", Color.red, 10);
-                AddSpacer(content, 2);
-            }
-            CreateMilitaryUnitRow(content, city, playerFac, "Cavalerie", "🐴", UnitType.Cavalry, 200, 20, 3, hasStables, "Sabres: 60, Chevaux: 80, Uniformes: 60");
-            CreateMilitaryUnitRow(content, city, playerFac, "Hussard", "⚡", UnitType.Hussar, 180, 15, 3, hasStables, "Sabres: 40, Chevaux: 60, Uniformes: 50");
-            CreateMilitaryUnitRow(content, city, playerFac, "Lancier", "🔱", UnitType.Lancer, 190, 18, 3, hasStables, "Sabres: 50, Chevaux: 70, Uniformes: 50");
+            CreateMilitaryUnitRow(content, city, playerFac, "Infanterie de Ligne", "🔫", UnitType.LineInfantry, 
+                120, 25, 15, hasBarracks, "400 soldats • colonne de bataille", 400);
+            CreateMilitaryUnitRow(content, city, playerFac, "Infanterie Légère", "🏹", UnitType.LightInfantry, 
+                100, 20, 12, hasBarracks, "300 tirailleurs • rapides", 300);
+            CreateMilitaryUnitRow(content, city, playerFac, "Fusilier", "🎯", UnitType.Fusilier, 
+                150, 30, 18, hasBarracks, "350 soldats • tir discipliné", 350);
+            CreateMilitaryUnitRow(content, city, playerFac, "Grenadier", "💣", UnitType.Grenadier, 
+                200, 40, 25, hasBarracks, "250 élites • haute valeur", 250);
+            CreateMilitaryUnitRow(content, city, playerFac, "Voltigeur", "⚡", UnitType.Voltigeur, 
+                180, 35, 20, hasBarracks, "200 tireurs d'élite • agiles", 200);
+            CreateMilitaryUnitRow(content, city, playerFac, "Chasseur", "🏹", UnitType.Chasseur, 
+                220, 45, 28, hasBarracks, "180 chasseurs • fusils rayés", 180);
             
-            UIFactory.CreateSeparator(content);
+            AddPremiumSpacer(content, 6);
             
-            // === ARTILLERY — Requires Armory ===
-            UIFactory.CreateSectionHeader(content, "SEC_MIL_ART", "💥 Artillerie", 13);
-            if (!hasArmory)
-            {
-                AddInfoRow(content, "⚠ ARMURERIE REQUISE pour recruter l'artillerie", Color.red, 10);
-                AddSpacer(content, 2);
-            }
-            CreateMilitaryUnitRow(content, city, playerFac, "Artillerie", "🎯", UnitType.Artillery, 300, 40, 4, hasArmory, "Canons: 6, Poudre: 100, Chevaux: 20");
+            // ═══════════════════════ CAVALRY ═══════════════════════
+            CreateMilitarySectionHeader(content, "🏇 CAVALERIE", 
+                hasStables ? "Écuries opérationnelles" : "⚠ ÉCURIES REQUISES");
             
-            UIFactory.CreateSeparator(content);
+            CreateMilitaryUnitRow(content, city, playerFac, "Cavalerie Milice", "🐴", UnitType.MilitiaCavalry, 
+                80, 10, 8, hasStables, "120 cavaliers • sabres + chevaux", 120);
+            CreateMilitaryUnitRow(content, city, playerFac, "Dragon", "🐴", UnitType.Dragoon, 
+                140, 18, 14, hasStables, "150 dragons • infanterie montée", 150);
+            CreateMilitaryUnitRow(content, city, playerFac, "Cavalerie", "🐴", UnitType.Cavalry, 
+                160, 22, 18, hasStables, "140 cavaliers • charge de ligne", 140);
+            CreateMilitaryUnitRow(content, city, playerFac, "Hussard", "⚡", UnitType.Hussar, 
+                150, 20, 15, hasStables, "120 hussards • éclaireurs rapides", 120);
+            CreateMilitaryUnitRow(content, city, playerFac, "Lancier", "🔱", UnitType.Lancer, 
+                180, 25, 22, hasStables, "130 lanciers • charge dévastatrice", 130);
+            CreateMilitaryUnitRow(content, city, playerFac, "Cuirassier", "🛡", UnitType.Cuirassier, 
+                250, 35, 30, hasStables, "100 cuirassiers • cavalerie lourde", 100);
             
-            // === GARRISON & DEFENSE ===
-            UIFactory.CreateSectionHeader(content, "SEC_MIL_DEF", "🏰 Garnison & Défense", 13);
+            AddPremiumSpacer(content, 6);
+            
+            // ═══════════════════════ ARTILLERY ═══════════════════════
+            CreateMilitarySectionHeader(content, "💥 ARTILLERIE", 
+                hasArmory ? "Armurerie opérationnelle" : "⚠ ARMURERIE REQUISE");
+            
+            CreateMilitaryUnitRow(content, city, playerFac, "Canon de garnison", "🏰", UnitType.GarrisonCannon, 
+                100, 20, 15, hasArmory, "4 canons • défense fixe", 4);
+            CreateMilitaryUnitRow(content, city, playerFac, "Artillerie de campagne", "🎯", UnitType.Artillery, 
+                200, 35, 25, hasArmory, "8 canons • puissance de feu", 8);
+            CreateMilitaryUnitRow(content, city, playerFac, "Artillerie à cheval", "🐴", UnitType.HorseArtillery, 
+                250, 40, 30, hasArmory, "6 canons • mobile + rapide", 6);
+            CreateMilitaryUnitRow(content, city, playerFac, "Obusier", "💥", UnitType.Howitzer, 
+                300, 50, 35, hasArmory, "6 obusiers • tir indirect", 6);
+            
+            AddPremiumSpacer(content, 10);
+            
+            // ═══════════════════════ GARRISON ═══════════════════════
+            CreateMilitarySectionHeader(content, "🏰 GARNISON & DÉFENSE", "");
             if (city != null)
             {
-                AddInfoRow(content, "Force active", $"{city.garrisonSize}/{city.maxGarrison}", UIFactory.SilverText);
-                float garRatio = (float)city.garrisonSize / Mathf.Max(1, city.maxGarrison);
-                var (gbg, gfill) = UIFactory.CreateProgressBar(content, "GarBar", garRatio > 0.7f ? Color.green : UIFactory.EmpireGold);
-                UIFactory.AddLayoutElement(gbg.gameObject, preferredHeight: 8);
-                gfill.GetComponent<RectTransform>().anchorMax = new Vector2(garRatio, 1f);
+                // Garrison bar
+                GameObject garRow = new GameObject("GarrisonRow");
+                garRow.transform.SetParent(content, false);
+                UIFactory.AddHorizontalLayout(garRow, 8f, new RectOffset(14, 14, 4, 4));
+                UIFactory.AddLayoutElement(garRow, preferredHeight: 30);
+                Image garBg = garRow.AddComponent<Image>();
+                garBg.color = new Color(0.10f, 0.10f, 0.10f, 1f);
                 
-                AddInfoRow(content, "Fortification", $"Grade {city.GetFortificationLevel()}", UIFactory.Porcelain);
+                Text garLabel = UIFactory.CreateText(garRow.transform, "GarLabel", "Force active", 12, 
+                    TextAnchor.MiddleLeft, UIFactory.Parchment);
+                UIFactory.AddLayoutElement(garLabel.gameObject, flexibleWidth: 1);
+                
+                float garRatio = (float)city.garrisonSize / Mathf.Max(1, city.maxGarrison);
+                Text garVal = UIFactory.CreateText(garRow.transform, "GarVal", 
+                    $"{city.garrisonSize}/{city.maxGarrison}", 12, TextAnchor.MiddleRight, 
+                    garRatio > 0.7f ? Color.green : UIFactory.EmpireGold);
+                garVal.fontStyle = FontStyle.Bold;
+                UIFactory.AddLayoutElement(garVal.gameObject, preferredWidth: 80);
+                
+                // Fortification
+                GameObject fortRow = new GameObject("FortRow");
+                fortRow.transform.SetParent(content, false);
+                UIFactory.AddHorizontalLayout(fortRow, 8f, new RectOffset(14, 14, 4, 4));
+                UIFactory.AddLayoutElement(fortRow, preferredHeight: 30);
+                Image fortBg = fortRow.AddComponent<Image>();
+                fortBg.color = new Color(0.08f, 0.08f, 0.09f, 1f);
+                
+                int fortLevel = city.GetFortificationLevel();
+                string fortStars = new string('★', fortLevel) + new string('☆', 5 - fortLevel);
+                
+                Text fortLabel = UIFactory.CreateText(fortRow.transform, "FortLabel", "Fortification", 12, 
+                    TextAnchor.MiddleLeft, UIFactory.Parchment);
+                UIFactory.AddLayoutElement(fortLabel.gameObject, flexibleWidth: 1);
+                
+                Text fortVal = UIFactory.CreateText(fortRow.transform, "FortVal", fortStars, 14, 
+                    TextAnchor.MiddleRight, UIFactory.EmpireGold);
+                UIFactory.AddLayoutElement(fortVal.gameObject, preferredWidth: 100);
             }
             
-            UIFactory.CreateSeparator(content);
+            AddPremiumSpacer(content, 10);
             
-            // === PRODUCTION QUEUE ===
-            UIFactory.CreateSectionHeader(content, "SEC_MIL_Q", "📋 File de Recrutement", 13);
+            // ═══════════════════════ QUEUE ═══════════════════════
+            CreateMilitarySectionHeader(content, "📋 FILE DE RECRUTEMENT", "");
             if (city != null && city.productionQueue.Count > 0)
             {
+                int qIdx = 0;
                 foreach (var item in city.productionQueue)
                 {
                     if (item.itemType == ProductionItemType.Unit)
                     {
+                        GameObject qRow = new GameObject($"Queue_{qIdx}");
+                        qRow.transform.SetParent(content, false);
+                        UIFactory.AddHorizontalLayout(qRow, 8f, new RectOffset(14, 14, 3, 3));
+                        UIFactory.AddLayoutElement(qRow, preferredHeight: 28);
+                        Image qBg = qRow.AddComponent<Image>();
+                        qBg.color = new Color(0.12f, 0.10f, 0.06f, 1f);
+                        
                         string unitIcon = GetUnitTypeIcon(item.unitType);
-                        AddInfoRow(content, $"  {unitIcon} {item.unitType.ToString().ToUpper()}", $"{item.turnsRemaining} tours", UIFactory.EmpireGold);
+                        Text qName = UIFactory.CreateText(qRow.transform, "QueueName", 
+                            $"  {unitIcon} {item.unitType}", 12, TextAnchor.MiddleLeft, UIFactory.Parchment);
+                        qName.fontStyle = FontStyle.Bold;
+                        UIFactory.AddLayoutElement(qName.gameObject, flexibleWidth: 1);
+                        
+                        Text qTurns = UIFactory.CreateText(qRow.transform, "QueueTurns", 
+                            $"⏱ {item.turnsRemaining} jour(s)", 11, TextAnchor.MiddleRight, UIFactory.EmpireGold);
+                        UIFactory.AddLayoutElement(qTurns.gameObject, preferredWidth: 90);
+                        qIdx++;
                     }
                 }
             }
             else
             {
-                AddInfoRow(content, "Aucun recrutement en cours", UIFactory.SilverText);
+                GameObject emptyRow = new GameObject("EmptyQueue");
+                emptyRow.transform.SetParent(content, false);
+                UIFactory.AddLayoutElement(emptyRow, preferredHeight: 26);
+                Image emptyBg = emptyRow.AddComponent<Image>();
+                emptyBg.color = new Color(0.08f, 0.08f, 0.08f, 1f);
+                Text emptyLabel = UIFactory.CreateText(emptyRow.transform, "EmptyLabel", 
+                    "   Aucun recrutement en cours", 11, TextAnchor.MiddleLeft, 
+                    new Color(0.4f, 0.4f, 0.4f));
+                emptyLabel.fontStyle = FontStyle.Italic;
+                RectTransform emptyLabelRT = emptyLabel.GetComponent<RectTransform>();
+                emptyLabelRT.anchorMin = Vector2.zero;
+                emptyLabelRT.anchorMax = Vector2.one;
+                emptyLabelRT.offsetMin = new Vector2(14, 0);
+                emptyLabelRT.offsetMax = Vector2.zero;
             }
         }
         
+        /// <summary>Create a premium section header for the military tab</summary>
+        private void CreateMilitarySectionHeader(Transform parent, string title, string subtitle)
+        {
+            GameObject header = new GameObject($"Sec_{title}");
+            header.transform.SetParent(parent, false);
+            UIFactory.AddLayoutElement(header, preferredHeight: subtitle.Length > 0 ? 48 : 40);
+            
+            Image bg = header.AddComponent<Image>();
+            bg.color = new Color(0.10f, 0.08f, 0.05f, 1f);
+            
+            // Gold left accent bar
+            GameObject accent = new GameObject("Accent");
+            accent.transform.SetParent(header.transform, false);
+            RectTransform accentRT = accent.AddComponent<RectTransform>();
+            accentRT.anchorMin = new Vector2(0, 0);
+            accentRT.anchorMax = new Vector2(0, 1);
+            accentRT.offsetMin = Vector2.zero;
+            accentRT.offsetMax = new Vector2(6, 0);
+            Image accentImg = accent.AddComponent<Image>();
+            accentImg.color = UIFactory.EmpireGold;
+            
+            // Title text
+            Text titleText = UIFactory.CreateText(header.transform, "Title", title, 17, 
+                TextAnchor.MiddleLeft, UIFactory.EmpireGold);
+            titleText.fontStyle = FontStyle.Bold;
+            RectTransform titleRT = titleText.GetComponent<RectTransform>();
+            titleRT.anchorMin = new Vector2(0, subtitle.Length > 0 ? 0.45f : 0);
+            titleRT.anchorMax = Vector2.one;
+            titleRT.offsetMin = new Vector2(16, 0);
+            titleRT.offsetMax = new Vector2(-10, 0);
+            
+            // Subtitle (status)
+            if (!string.IsNullOrEmpty(subtitle))
+            {
+                bool isWarning = subtitle.Contains("⚠");
+                Text subText = UIFactory.CreateText(header.transform, "Sub", subtitle, 13, 
+                    TextAnchor.MiddleLeft, isWarning ? new Color(0.85f, 0.3f, 0.2f) : new Color(0.4f, 0.55f, 0.35f));
+                subText.fontStyle = isWarning ? FontStyle.Bold : FontStyle.Italic;
+                RectTransform subRT = subText.GetComponent<RectTransform>();
+                subRT.anchorMin = Vector2.zero;
+                subRT.anchorMax = new Vector2(1, 0.45f);
+                subRT.offsetMin = new Vector2(16, 0);
+                subRT.offsetMax = new Vector2(-10, 0);
+            }
+        }
+        
+        /// <summary>Premium spacer with subtle line</summary>
+        private void AddPremiumSpacer(Transform parent, float height)
+        {
+            GameObject spacer = new GameObject("Spacer");
+            spacer.transform.SetParent(parent, false);
+            UIFactory.AddLayoutElement(spacer, preferredHeight: height);
+        }
+        
         /// <summary>
-        /// Create a military unit recruitment row with cost breakdown and recruit button
+        /// Create a premium military unit row with icon, stats, cost, and recruit button.
+        /// Fixed: passes skipBuildingCheck when meetsRequirements is true (for militia).
         /// </summary>
         private void CreateMilitaryUnitRow(Transform parent, CityData city, FactionData faction,
             string unitName, string icon, UnitType unitType, int goldCost, int ironCost, int turns, 
-            bool meetsRequirements, string equipmentInfo)
+            bool meetsRequirements, string unitInfo, int unitSize)
         {
             GameObject row = new GameObject($"U_{unitName}");
             row.transform.SetParent(parent, false);
-            UIFactory.AddHorizontalLayout(row, 6f, new RectOffset(8, 8, 3, 3));
-            UIFactory.AddLayoutElement(row, preferredHeight: 44);
-            Image bg = row.AddComponent<Image>();
-            bg.color = meetsRequirements ? new Color(1, 1, 1, 0.04f) : new Color(0.3f, 0.1f, 0.1f, 0.15f);
+            UIFactory.AddLayoutElement(row, preferredHeight: 52);
             
-            // Left: unit name and costs
-            GameObject leftCol = new GameObject("Left");
-            leftCol.transform.SetParent(row.transform, false);
-            var vlg = leftCol.AddComponent<VerticalLayoutGroup>();
+            // Row background — alternating dark tones
+            Image bg = row.AddComponent<Image>();
+            bg.color = meetsRequirements 
+                ? new Color(0.08f, 0.08f, 0.09f, 1f)    // Dark but opaque
+                : new Color(0.08f, 0.05f, 0.05f, 1f);   // Slight red tint = locked
+            
+            // Horizontal layout
+            UIFactory.AddHorizontalLayout(row, 8f, new RectOffset(10, 10, 4, 4));
+            
+            // === ICON ===
+            GameObject iconContainer = new GameObject("IconContainer");
+            iconContainer.transform.SetParent(row.transform, false);
+            RectTransform iconContainerRT = iconContainer.AddComponent<RectTransform>();
+            UIFactory.AddLayoutElement(iconContainer, preferredWidth: 36, preferredHeight: 36);
+            Image iconBg = iconContainer.AddComponent<Image>();
+            Color unitColor = GetUnitTypeColor(unitType);
+            iconBg.color = new Color(unitColor.r * 0.25f, unitColor.g * 0.25f, unitColor.b * 0.25f, 1f);
+            
+            Text iconText = UIFactory.CreateText(iconContainer.transform, "Icon", icon, 22, 
+                TextAnchor.MiddleCenter, meetsRequirements ? unitColor : new Color(0.3f, 0.3f, 0.3f));
+            RectTransform iconTextRT = iconText.GetComponent<RectTransform>();
+            iconTextRT.anchorMin = Vector2.zero;
+            iconTextRT.anchorMax = Vector2.one;
+            iconTextRT.offsetMin = Vector2.zero;
+            iconTextRT.offsetMax = Vector2.zero;
+            
+            // === INFO COLUMN ===
+            GameObject infoCol = new GameObject("InfoCol");
+            infoCol.transform.SetParent(row.transform, false);
+            var vlg = infoCol.AddComponent<VerticalLayoutGroup>();
             vlg.spacing = 1f;
             vlg.childForceExpandWidth = true;
             vlg.childForceExpandHeight = false;
-            UIFactory.AddLayoutElement(leftCol, flexibleWidth: 1);
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = false;
+            UIFactory.AddLayoutElement(infoCol, flexibleWidth: 1);
             
-            Text nameLabel = UIFactory.CreateText(leftCol.transform, "Name", $"{icon} {unitName.ToUpper()}", 11, 
-                TextAnchor.MiddleLeft, meetsRequirements ? UIFactory.Porcelain : UIFactory.SilverText);
+            // Unit name — large and bold
+            Text nameLabel = UIFactory.CreateText(infoCol.transform, "Name", unitName.ToUpper(), 12, 
+                TextAnchor.MiddleLeft, meetsRequirements ? UIFactory.Porcelain : new Color(0.45f, 0.35f, 0.35f));
             nameLabel.fontStyle = FontStyle.Bold;
+            UIFactory.AddLayoutElement(nameLabel.gameObject, preferredHeight: 16);
             
-            string costStr = $"  💰{goldCost}g  ⛏{ironCost} fer  ⏱{turns}t";
-            UIFactory.CreateText(leftCol.transform, "Cost", costStr, 9, TextAnchor.MiddleLeft, UIFactory.MutedGold);
+            // Unit info
+            Text infoLabel = UIFactory.CreateText(infoCol.transform, "Info", unitInfo, 10, 
+                TextAnchor.MiddleLeft, new Color(0.45f, 0.45f, 0.42f));
+            UIFactory.AddLayoutElement(infoLabel.gameObject, preferredHeight: 14);
             
-            // Equipment tooltip
-            UIFactory.CreateText(leftCol.transform, "Equip", $"  {equipmentInfo}", 8, TextAnchor.MiddleLeft, 
-                new Color(0.5f, 0.5f, 0.45f));
+            // Cost line — gold icons
+            string costStr = $"💰 {goldCost}  ⛏ {ironCost}  ⏱ {turns}j";
+            Text costLabel = UIFactory.CreateText(infoCol.transform, "Cost", costStr, 10, 
+                TextAnchor.MiddleLeft, UIFactory.MutedGold);
+            UIFactory.AddLayoutElement(costLabel.gameObject, preferredHeight: 14);
             
-            // Right: button
+            // === RECRUIT BUTTON ===
             if (meetsRequirements && city != null)
             {
                 bool canAfford = faction != null && faction.gold >= goldCost && faction.iron >= ironCost;
-                UnitType ct = unitType; int cc = goldCost;
-                Button btn = UIFactory.CreateButton(row.transform, "Draft", canAfford ? "RECRUTER" : "FONDS ✗", 9, () =>
-                { 
-                    if (canAfford) { city.StartUnitProduction(ct, cc); cityPanelDirty = true; RefreshCityPanel(); }
+                
+                // Capture for closure
+                UnitType capturedType = unitType;
+                int capturedCost = goldCost;
+                bool capturedSkipCheck = meetsRequirements;
+                int capturedTurns = turns;
+                CityData capturedCity = city;
+                
+                Button btn = UIFactory.CreateGoldButton(row.transform, "Recruit", 
+                    canAfford ? "RECRUTER" : "FONDS ✗", 11, () =>
+                {
+                    Debug.Log($"[CampaignUI] RECRUIT CLICKED: {capturedType}, cost={capturedCost}, skip={capturedSkipCheck}, turns={capturedTurns}, city={capturedCity?.cityName}");
+                    if (capturedCity.StartUnitProduction(capturedType, capturedCost, capturedSkipCheck, capturedTurns))
+                    {
+                        cityPanelDirty = true;
+                        RefreshCityPanel();
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[CampaignUI] StartUnitProduction returned FALSE!");
+                    }
                 });
-                UIFactory.AddLayoutElement(btn.gameObject, preferredWidth: 75, preferredHeight: 26);
+                UIFactory.AddLayoutElement(btn.gameObject, preferredWidth: 90, preferredHeight: 34);
                 btn.interactable = canAfford;
+                
+                if (!canAfford)
+                {
+                    btn.GetComponent<Image>().color = new Color(0.15f, 0.12f, 0.12f, 1f);
+                }
             }
             else
             {
-                Text locked = UIFactory.CreateText(row.transform, "Lock", "🔒", 12, TextAnchor.MiddleCenter, new Color(0.5f, 0.3f, 0.3f));
-                UIFactory.AddLayoutElement(locked.gameObject, preferredWidth: 30);
+                // Locked indicator
+                GameObject lockContainer = new GameObject("Lock");
+                lockContainer.transform.SetParent(row.transform, false);
+                UIFactory.AddLayoutElement(lockContainer, preferredWidth: 60, preferredHeight: 34);
+                
+                Text lockText = UIFactory.CreateText(lockContainer.transform, "LockIcon", "🔒", 18, 
+                    TextAnchor.MiddleCenter, new Color(0.4f, 0.25f, 0.25f));
+                RectTransform lockRT = lockText.GetComponent<RectTransform>();
+                lockRT.anchorMin = Vector2.zero;
+                lockRT.anchorMax = Vector2.one;
+                lockRT.offsetMin = Vector2.zero;
+                lockRT.offsetMax = Vector2.zero;
             }
         }
         
@@ -2046,116 +2622,167 @@ namespace NapoleonicWars.UI
             if (content == null) return;
             ClearContent(content);
             
+            // Force opaque background
+            Image contentBg = content.gameObject.GetComponent<Image>();
+            if (contentBg == null) contentBg = content.gameObject.AddComponent<Image>();
+            contentBg.color = new Color(0.06f, 0.06f, 0.07f, 1f);
+            
             FactionData playerFac = CampaignManager.Instance?.GetPlayerFaction();
             
-            // === PRODUCTION SUMMARY ===
-            UIFactory.CreateSectionHeader(content, "SEC_IND_SUM", "📊 Résumé de Production", 13);
+            // ═══════════════ PRODUCTION SUMMARY ═══════════════
+            CreateMilitarySectionHeader(content, "📊 PRODUCTION TOTALE", "");
+            
             float totalGold = prov.goldIncome, totalFood = prov.foodProduction, totalIron = prov.ironProduction;
-            float indGold = 0, indFood = 0, indIron = 0, indWood = 0;
+            float indGold = 0, indFood = 0, indIron = 0;
             
             if (city != null)
-            {
                 foreach (var ind in city.industries)
                 {
                     indGold += ind.GetGoldOutput();
                     indFood += ind.GetFoodOutput();
                     indIron += ind.GetIronOutput();
-                    indWood += 0; // Wood output not yet implemented
                 }
-            }
             totalGold += indGold; totalFood += indFood; totalIron += indIron;
             
-            AddInfoRow(content, "💰 Or total", $"+{totalGold:F0}/tour (province: {prov.goldIncome:F0}, industrie: {indGold:F0})", UIFactory.EmpireGold);
-            AddInfoRow(content, "🌾 Nourriture", $"+{totalFood:F0}/tour (province: {prov.foodProduction:F0}, industrie: {indFood:F0})", new Color(0.5f, 0.8f, 0.3f));
-            AddInfoRow(content, "⛏ Fer", $"+{totalIron:F0}/tour (province: {prov.ironProduction:F0}, industrie: {indIron:F0})", UIFactory.SilverText);
-            if (indWood > 0) AddInfoRow(content, "🪵 Bois", $"+{indWood:F0}/tour", new Color(0.6f, 0.45f, 0.25f));
+            // Resource summary grid
+            GameObject resGrid = new GameObject("ResGrid");
+            resGrid.transform.SetParent(content, false);
+            UIFactory.AddHorizontalLayout(resGrid, 4f, new RectOffset(8, 8, 4, 4));
+            UIFactory.AddLayoutElement(resGrid, preferredHeight: 50);
+            Image resGridBg = resGrid.AddComponent<Image>();
+            resGridBg.color = new Color(0.08f, 0.08f, 0.09f, 1f);
             
-            UIFactory.CreateSeparator(content);
+            CreateResourceCard(resGrid.transform, "💰", "Or", $"+{totalGold:F0}", UIFactory.EmpireGold);
+            CreateResourceCard(resGrid.transform, "🌾", "Nourriture", $"+{totalFood:F0}", new Color(0.5f, 0.8f, 0.3f));
+            CreateResourceCard(resGrid.transform, "⛏", "Fer", $"+{totalIron:F0}", UIFactory.SilverText);
             
-            // === EXISTING INDUSTRIES ===
-            UIFactory.CreateSectionHeader(content, "SEC_IND_ACT", "🏭 Industries Actives", 13);
+            // Industry contribution
+            if (indGold > 0 || indFood > 0 || indIron > 0)
+            {
+                GameObject contribRow = new GameObject("Contrib");
+                contribRow.transform.SetParent(content, false);
+                UIFactory.AddLayoutElement(contribRow, preferredHeight: 20);
+                Image contribBg = contribRow.AddComponent<Image>();
+                contribBg.color = new Color(0.07f, 0.07f, 0.08f, 1f);
+                string contribStr = "  🏭 Industrie:";
+                if (indGold > 0) contribStr += $" +{indGold:F0}💰";
+                if (indFood > 0) contribStr += $" +{indFood:F0}🌾";
+                if (indIron > 0) contribStr += $" +{indIron:F0}⛏";
+                Text contribText = UIFactory.CreateText(contribRow.transform, "Contrib", contribStr, 9, 
+                    TextAnchor.MiddleLeft, new Color(0.45f, 0.45f, 0.42f));
+                RectTransform contribRT = contribText.GetComponent<RectTransform>();
+                contribRT.anchorMin = Vector2.zero; contribRT.anchorMax = Vector2.one;
+                contribRT.offsetMin = new Vector2(8, 0); contribRT.offsetMax = Vector2.zero;
+            }
+            
+            AddPremiumSpacer(content, 6);
+            
+            // ═══════════════ ACTIVE INDUSTRIES ═══════════════
+            CreateMilitarySectionHeader(content, "🏭 INDUSTRIES ACTIVES", 
+                city != null ? $"{city.industries.Count} industrie(s)" : "");
+            
             if (city != null && city.industries.Count > 0)
             {
                 foreach (var ind in city.industries)
                 {
                     string output = "";
-                    if (ind.GetGoldOutput() > 0) output += $"+{ind.GetGoldOutput():F0}g ";
+                    if (ind.GetGoldOutput() > 0) output += $"+{ind.GetGoldOutput():F0}💰 ";
                     if (ind.GetFoodOutput() > 0) output += $"+{ind.GetFoodOutput():F0}🌾 ";
                     if (ind.GetIronOutput() > 0) output += $"+{ind.GetIronOutput():F0}⛏ ";
-                    // Wood output not yet implemented
                     
                     string indName = GetIndustryName(ind.industryType);
+                    string indIcon = GetIndustryIcon(ind.industryType);
                     
                     GameObject row = new GameObject($"I_{ind.industryType}");
                     row.transform.SetParent(content, false);
-                    UIFactory.AddHorizontalLayout(row, 6f, new RectOffset(8, 8, 3, 3));
-                    UIFactory.AddLayoutElement(row, preferredHeight: 40);
+                    UIFactory.AddHorizontalLayout(row, 8f, new RectOffset(10, 10, 4, 4));
+                    UIFactory.AddLayoutElement(row, preferredHeight: 48);
                     Image bg = row.AddComponent<Image>();
-                    bg.color = new Color(1, 1, 1, 0.04f);
+                    bg.color = new Color(0.08f, 0.08f, 0.09f, 1f);
                     
-                    // Left info
-                    GameObject leftCol = new GameObject("Left");
-                    leftCol.transform.SetParent(row.transform, false);
-                    var vlg = leftCol.AddComponent<VerticalLayoutGroup>();
+                    // Icon
+                    GameObject iconC = new GameObject("IconC");
+                    iconC.transform.SetParent(row.transform, false);
+                    UIFactory.AddLayoutElement(iconC, preferredWidth: 32, preferredHeight: 32);
+                    Image iconBg = iconC.AddComponent<Image>();
+                    iconBg.color = new Color(0.12f, 0.10f, 0.08f, 1f);
+                    Text iconTxt = UIFactory.CreateText(iconC.transform, "Icon", indIcon, 18, TextAnchor.MiddleCenter, UIFactory.EmpireGold);
+                    RectTransform iconTxtRT = iconTxt.GetComponent<RectTransform>();
+                    iconTxtRT.anchorMin = Vector2.zero; iconTxtRT.anchorMax = Vector2.one;
+                    iconTxtRT.offsetMin = Vector2.zero; iconTxtRT.offsetMax = Vector2.zero;
+                    
+                    // Info
+                    GameObject infoC = new GameObject("Info");
+                    infoC.transform.SetParent(row.transform, false);
+                    var vlg = infoC.AddComponent<VerticalLayoutGroup>();
                     vlg.spacing = 1f; vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false;
-                    UIFactory.AddLayoutElement(leftCol, flexibleWidth: 1);
+                    vlg.childControlWidth = true; vlg.childControlHeight = false;
+                    UIFactory.AddLayoutElement(infoC, flexibleWidth: 1);
                     
-                    var lbl = UIFactory.CreateText(leftCol.transform, "Lbl", $"{GetIndustryIcon(ind.industryType)} {indName.ToUpper()} NV.{ind.level}", 11, TextAnchor.MiddleLeft, UIFactory.Porcelain);
+                    Text lbl = UIFactory.CreateText(infoC.transform, "Name", $"{indName.ToUpper()} NV.{ind.level}", 12, TextAnchor.MiddleLeft, UIFactory.Porcelain);
                     lbl.fontStyle = FontStyle.Bold;
-                    UIFactory.CreateText(leftCol.transform, "Out", $"  Production: {output}", 9, TextAnchor.MiddleLeft, UIFactory.MutedGold);
+                    UIFactory.AddLayoutElement(lbl.gameObject, preferredHeight: 16);
+                    
+                    Text outTxt = UIFactory.CreateText(infoC.transform, "Out", output.Trim(), 10, TextAnchor.MiddleLeft, UIFactory.MutedGold);
+                    UIFactory.AddLayoutElement(outTxt.gameObject, preferredHeight: 14);
                     
                     // Upgrade button
                     int upgCost = 150 * ind.level;
                     int upgIron = 50 * ind.level;
                     bool canUpgrade = playerFac != null && playerFac.gold >= upgCost && playerFac.iron >= upgIron;
                     IndustrySlot ci = ind;
-                    Button btn = UIFactory.CreateButton(row.transform, "Up", canUpgrade ? $"↑ NV.{ind.level + 1}" : "FONDS ✗", 9, () =>
+                    int capUpgCost = upgCost, capUpgIron = upgIron;
+                    
+                    GameObject btnCol = new GameObject("BtnCol");
+                    btnCol.transform.SetParent(row.transform, false);
+                    var bvlg = btnCol.AddComponent<VerticalLayoutGroup>();
+                    bvlg.spacing = 1f; bvlg.childForceExpandWidth = true; bvlg.childForceExpandHeight = false;
+                    bvlg.childAlignment = TextAnchor.MiddleCenter;
+                    UIFactory.AddLayoutElement(btnCol, preferredWidth: 80);
+                    
+                    Button btn = UIFactory.CreateGoldButton(btnCol.transform, "Up", canUpgrade ? $"↑ NV.{ind.level + 1}" : "FONDS ✗", 9, () =>
                     { 
                         if (canUpgrade && playerFac != null) 
                         { 
-                            playerFac.gold -= upgCost; playerFac.iron -= upgIron;
+                            playerFac.gold -= capUpgCost; playerFac.iron -= capUpgIron;
                             ci.level++; cityPanelDirty = true; RefreshCityPanel(); 
                         }
                     });
-                    UIFactory.AddLayoutElement(btn.gameObject, preferredWidth: 70, preferredHeight: 24);
+                    UIFactory.AddLayoutElement(btn.gameObject, preferredHeight: 22);
                     btn.interactable = canUpgrade;
                     
-                    // Cost label
-                    UIFactory.CreateText(row.transform, "UpCost", $"{upgCost}g\n{upgIron}⛏", 8, TextAnchor.MiddleCenter, UIFactory.SilverText);
+                    Text costLbl = UIFactory.CreateText(btnCol.transform, "Cost", $"{upgCost}g {upgIron}⛏", 8, TextAnchor.MiddleCenter, UIFactory.SilverText);
+                    UIFactory.AddLayoutElement(costLbl.gameObject, preferredHeight: 12);
                 }
             }
             else
             {
-                AddInfoRow(content, "Aucune industrie — agriculture de subsistance uniquement", UIFactory.SilverText);
+                CreateCompactDataRow(content, "Aucune industrie", "Agriculture de subsistance", UIFactory.SilverText, false);
             }
             
-            UIFactory.CreateSeparator(content);
+            AddPremiumSpacer(content, 6);
             
-            // === MILITARY EQUIPMENT DEMAND ===
-            UIFactory.CreateSectionHeader(content, "SEC_IND_MIL", "⚔ Besoins Militaires", 13);
+            // ═══════════════ EQUIPMENT ═══════════════
+            CreateMilitarySectionHeader(content, "⚔ ÉQUIPEMENT MILITAIRE", "");
             if (playerFac != null)
             {
                 var stockpile = playerFac.equipment;
                 if (stockpile != null)
                 {
-                    AddEquipmentRow(content, "Mousquets", EquipmentType.Muskets, stockpile);
-                    AddEquipmentRow(content, "Baïonnettes", EquipmentType.Bayonets, stockpile);
-                    AddEquipmentRow(content, "Sabres", EquipmentType.Sabres, stockpile);
-                    AddEquipmentRow(content, "Canons légers", EquipmentType.CannonsLight, stockpile);
-                    AddEquipmentRow(content, "Canons lourds", EquipmentType.CannonsHeavy, stockpile);
-                    AddEquipmentRow(content, "Chevaux", EquipmentType.Horses, stockpile);
-                    AddEquipmentRow(content, "Uniformes", EquipmentType.Uniforms, stockpile);
-                }
-                else
-                {
-                    AddInfoRow(content, "Aucun équipement produit", UIFactory.SilverText);
+                    AddEquipmentRow(content, "🔫 Mousquets", EquipmentType.Muskets, stockpile);
+                    AddEquipmentRow(content, "🗡 Baïonnettes", EquipmentType.Bayonets, stockpile);
+                    AddEquipmentRow(content, "⚔ Sabres", EquipmentType.Sabres, stockpile);
+                    AddEquipmentRow(content, "💣 Canons légers", EquipmentType.CannonsLight, stockpile);
+                    AddEquipmentRow(content, "💥 Canons lourds", EquipmentType.CannonsHeavy, stockpile);
+                    AddEquipmentRow(content, "🐴 Chevaux", EquipmentType.Horses, stockpile);
+                    AddEquipmentRow(content, "👔 Uniformes", EquipmentType.Uniforms, stockpile);
                 }
             }
-
-            UIFactory.CreateSeparator(content);
             
-            // === ADD NEW INDUSTRY ===
-            UIFactory.CreateSectionHeader(content, "SEC_IND_ADD", "➕ Développer l'Industrie", 13);
+            AddPremiumSpacer(content, 6);
+            
+            // ═══════════════ ADD INDUSTRY ═══════════════
+            CreateMilitarySectionHeader(content, "➕ DÉVELOPPER L'INDUSTRIE", "");
             
             var allIndustries = new (IndustryType type, string name, string icon, string terrain, int goldCost, int ironCost)[]
             {
@@ -2173,7 +2800,6 @@ namespace NapoleonicWars.UI
             {
                 if (city != null && city.industries.Exists(i => i.industryType == type)) continue;
                 
-                // Terrain check
                 bool terrainOk = true;
                 if (terrain == "Côtier" && prov.terrainType != ProvinceTerrainType.Coastal) terrainOk = false;
                 if (terrain == "Collines/Montagnes" && prov.terrainType != ProvinceTerrainType.Hills && prov.terrainType != ProvinceTerrainType.Mountains) terrainOk = false;
@@ -2183,23 +2809,31 @@ namespace NapoleonicWars.UI
                 
                 GameObject row = new GameObject($"Add_{type}");
                 row.transform.SetParent(content, false);
-                UIFactory.AddHorizontalLayout(row, 6f, new RectOffset(8, 8, 2, 2));
-                UIFactory.AddLayoutElement(row, preferredHeight: 30);
+                UIFactory.AddHorizontalLayout(row, 6f, new RectOffset(10, 10, 3, 3));
+                UIFactory.AddLayoutElement(row, preferredHeight: 32);
                 Image rbg = row.AddComponent<Image>();
-                rbg.color = terrainOk ? new Color(1, 1, 1, 0.03f) : new Color(0.3f, 0.1f, 0.1f, 0.1f);
+                rbg.color = terrainOk 
+                    ? new Color(0.08f, 0.08f, 0.09f, 1f) 
+                    : new Color(0.08f, 0.05f, 0.05f, 1f);
                 
-                Text lbl = UIFactory.CreateText(row.transform, "Lbl", $"{icon} {name} ({goldCost}g, {ironCost}⛏)", 10, TextAnchor.MiddleLeft, terrainOk ? UIFactory.Porcelain : UIFactory.SilverText);
+                Text lbl = UIFactory.CreateText(row.transform, "Lbl", $"{icon} {name}", 11, 
+                    TextAnchor.MiddleLeft, terrainOk ? UIFactory.Porcelain : new Color(0.4f, 0.35f, 0.35f));
+                lbl.fontStyle = FontStyle.Bold;
                 UIFactory.AddLayoutElement(lbl.gameObject, flexibleWidth: 1);
+                
+                Text costTxt = UIFactory.CreateText(row.transform, "Cost", $"💰{goldCost} ⛏{ironCost}", 9, 
+                    TextAnchor.MiddleCenter, UIFactory.MutedGold);
+                UIFactory.AddLayoutElement(costTxt.gameObject, preferredWidth: 75);
                 
                 if (!terrainOk)
                 {
-                    Text req = UIFactory.CreateText(row.transform, "Req", $"TERRAIN: {terrain}", 8, TextAnchor.MiddleRight, UIFactory.ImperialCrimson);
-                    UIFactory.AddLayoutElement(req.gameObject, preferredWidth: 100);
+                    Text req = UIFactory.CreateText(row.transform, "Req", terrain, 9, TextAnchor.MiddleCenter, new Color(0.6f, 0.3f, 0.25f));
+                    UIFactory.AddLayoutElement(req.gameObject, preferredWidth: 80);
                 }
                 else
                 {
                     IndustryType ct = type; int gc = goldCost; int ic = ironCost;
-                    Button ab = UIFactory.CreateButton(row.transform, "Add", canAfford ? "CONSTRUIRE" : "FONDS ✗", 9, () =>
+                    Button ab = UIFactory.CreateGoldButton(row.transform, "Add", canAfford ? "CONSTRUIRE" : "✗", 9, () =>
                     {
                         if (city != null && canAfford && playerFac != null)
                         {
@@ -2207,18 +2841,18 @@ namespace NapoleonicWars.UI
                             city.AddIndustry(ct); cityPanelDirty = true; RefreshCityPanel();
                         }
                     });
-                    UIFactory.AddLayoutElement(ab.gameObject, preferredWidth: 85, preferredHeight: 22);
+                    UIFactory.AddLayoutElement(ab.gameObject, preferredWidth: 80, preferredHeight: 24);
                     ab.interactable = canAfford;
                 }
             }
         }
         
-        /// <summary>Equipment stockpile row showing current stock for a specific equipment type</summary>
+        /// <summary>Equipment stockpile row with color-coded value</summary>
         private void AddEquipmentRow(Transform parent, string name, EquipmentType type, EquipmentStockpile stockpile)
         {
             float stock = stockpile.Get(type);
-            Color col = stock > 50 ? Color.green : stock > 10 ? UIFactory.EmpireGold : Color.red;
-            AddInfoRow(parent, $"  {name}", $"{stock:F0} en stock", col);
+            Color col = stock > 50 ? new Color(0.4f, 0.75f, 0.35f) : stock > 10 ? UIFactory.EmpireGold : new Color(0.85f, 0.3f, 0.2f);
+            CreateCompactDataRow(parent, name, $"{stock:F0} en stock", col, false);
         }
         
         private string GetIndustryName(IndustryType type)
@@ -2256,16 +2890,16 @@ namespace NapoleonicWars.UI
         // ─── HELPERS ──────────────────────────────────────────────
         private void AddSectionLabel(Transform parent, string title)
         {
-            Text t = UIFactory.CreateText(parent, $"Sec_{title}", title, 13, TextAnchor.MiddleLeft, new Color(0.7f, 0.6f, 0.35f));
+            Text t = UIFactory.CreateText(parent, $"Sec_{title}", title, 16, TextAnchor.MiddleLeft, new Color(0.7f, 0.6f, 0.35f));
             t.fontStyle = FontStyle.Bold;
-            UIFactory.AddLayoutElement(t.gameObject, 22);
+            UIFactory.AddLayoutElement(t.gameObject, 28);
         }
         
         private void AddInfoRow(Transform parent, string text, Color color, int fontSize = 12, bool bold = false)
         {
             Text t = UIFactory.CreateText(parent, "Info", text, fontSize, TextAnchor.MiddleLeft, color);
             if (bold) t.fontStyle = FontStyle.Bold;
-            UIFactory.AddLayoutElement(t.gameObject, fontSize + 8);
+            UIFactory.AddLayoutElement(t.gameObject, fontSize + 12);
         }
 
         private void AddInfoRow(Transform parent, string label, string value, Color color, int fontSize = 12)
@@ -2800,6 +3434,12 @@ namespace NapoleonicWars.UI
                 case FactionType.Ottoman: return new Color(0.2f, 0.6f, 0.4f); // Green/Teal
                 default: return Color.gray;
             }
+        }
+        
+        /// <summary>Find the city in a given province (for recruitment from army panel).</summary>
+        private CityData FindCityInProvince(string provinceId)
+        {
+            return CampaignManager.Instance?.GetCityForProvince(provinceId);
         }
     }
 

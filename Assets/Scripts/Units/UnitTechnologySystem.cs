@@ -100,7 +100,7 @@ namespace NapoleonicWars.Units
             unitModifiers[UnitType.Lancer] = new UnitTechModifiers();
             unitModifiers[UnitType.Hussar] = new UnitTechModifiers();
             unitModifiers[UnitType.Artillery] = new UnitTechModifiers();
-            unitModifiers[UnitType.ImperialGuard] = new UnitTechModifiers();
+            unitModifiers[UnitType.GuardInfantry] = new UnitTechModifiers();
             unitModifiers[UnitType.GuardCavalry] = new UnitTechModifiers();
             unitModifiers[UnitType.GuardArtillery] = new UnitTechModifiers();
         }
@@ -181,7 +181,7 @@ namespace NapoleonicWars.Units
             var line = unitModifiers[UnitType.LineInfantry];
             var light = unitModifiers[UnitType.LightInfantry];
             var grenadier = unitModifiers[UnitType.Grenadier];
-            var guard = unitModifiers[UnitType.ImperialGuard];
+            var guard = unitModifiers[UnitType.GuardInfantry];
             
             // Accuracy bonuses
             if (tech.accuracyBonus > 0)
@@ -365,7 +365,7 @@ namespace NapoleonicWars.Units
         private void ApplyToGuardUnits(Technology tech)
         {
             // Guard units get additional bonuses on top of base unit bonuses
-            var guard = unitModifiers[UnitType.ImperialGuard];
+            var guard = unitModifiers[UnitType.GuardInfantry];
             var guardCav = unitModifiers[UnitType.GuardCavalry];
             var guardArt = unitModifiers[UnitType.GuardArtillery];
             
