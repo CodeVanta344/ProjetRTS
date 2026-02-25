@@ -215,6 +215,11 @@ namespace NapoleonicWars.Campaign
             }
         }
         
+        public void CompleteDailyProduction(ProductionQueueItem item)
+        {
+            CompleteProduction(item);
+        }
+        
         private void CompleteProduction(ProductionQueueItem item)
         {
             switch (item.itemType)
@@ -229,7 +234,21 @@ namespace NapoleonicWars.Campaign
                     }
                     break;
                 case ProductionItemType.Unit:
-                    Debug.Log($"[CityData] {cityName}: Unit {item.unitType} produced!");
+                    // Create regiment and add to army in this province
+                    if (CampaignManager.Instance != null)
+                    {
+                        int size = RegimentData.GetDefaultSize(item.unitType);
+                        string regName = $"{item.unitType} — {cityName}";
+                        RegimentData regiment = new RegimentData(regName, item.unitType, size);
+                        
+                        ArmyData army = CampaignManager.Instance.CreateOrGetArmyInProvince(provinceId, owner);
+                        army.AddRegiment(regiment);
+                        Debug.Log($"[CityData] {cityName}: {item.unitType} ({size} men) joined '{army.armyName}'");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[CityData] {cityName}: Unit {item.unitType} produced but no CampaignManager!");
+                    }
                     break;
             }
         }
@@ -308,8 +327,14 @@ namespace NapoleonicWars.Campaign
             Debug.Log($"[CityData] {cityName} started building {type}");
         }
 
-        public bool StartUnitProduction(UnitType type, int cost)
+        /// <summary>
+        /// Start unit production: deducts gold, iron, manpower, and equipment.
+        /// ironCost and turnsOverride can be provided. Equipment is auto-calculated.
+        /// </summary>
+        public bool StartUnitProduction(UnitType type, int goldCost, bool skipBuildingCheck = false, int turnsOverride = -1, int ironCost = 0)
         {
+            Debug.Log($"[CityData] StartUnitProduction called: type={type}, gold={goldCost}, iron={ironCost}, skipCheck={skipBuildingCheck}, turnsOverride={turnsOverride}, city={cityName}");
+            
             // MULTIPLAYER CHECK
             if (NapoleonicWars.Network.NetworkLobbyManager.Instance != null && 
                 NapoleonicWars.Network.NetworkLobbyManager.Instance.IsConnected)
@@ -325,17 +350,70 @@ namespace NapoleonicWars.Campaign
                         param1 = (int)type,
                         priority = 60
                     });
-                    Debug.Log($"[CityData] Recruitment {type} queued for network turn resolution.");
+                    Debug.Log($"[CityData] Recruitment {type} queued for network turn.");
                     return true;
                 }
             }
 
-            // Check if we have required buildings
-            if (!CanProduceUnit(type)) return false;
+            // Building check
+            if (!skipBuildingCheck && !CanProduceUnit(type))
+            {
+                Debug.LogWarning($"[CityData] {cityName}: CanProduceUnit({type}) = false!");
+                return false;
+            }
 
-            if (cost > 0 && !CampaignManager.Instance.SpendGold(owner, cost)) return false;
-            
-            int turns = GetUnitProductionTurns(type);
+            // Get faction
+            FactionData faction = CampaignManager.Instance?.GetFaction(owner);
+            if (faction == null)
+            {
+                Debug.LogWarning($"[CityData] {cityName}: faction {owner} not found!");
+                return false;
+            }
+
+            // ── RESOURCE CHECKS ──
+            // 1. Gold + Iron
+            if (!faction.CanAfford(goldCost, ironCost))
+            {
+                Debug.LogWarning($"[CityData] {cityName}: Can't afford {goldCost}g + {ironCost} iron!");
+                return false;
+            }
+
+            // 2. Manpower
+            int regimentSize = RegimentData.GetDefaultSize(type);
+            if (faction.manpower < regimentSize)
+            {
+                Debug.LogWarning($"[CityData] {cityName}: Not enough manpower ({faction.manpower}/{regimentSize})!");
+                return false;
+            }
+
+            // 3. Equipment check (non-blocking warning only — initial equipment consumed on deploy)
+            var equipNeeds = RegimentEquipmentNeeds.ForUnitType(type, regimentSize);
+            bool hasEquipment = true;
+            foreach (var kvp in equipNeeds.requirements)
+            {
+                if (faction.equipment.Get(kvp.Key) < kvp.Value)
+                {
+                    hasEquipment = false;
+                    break;
+                }
+            }
+            if (!hasEquipment)
+                Debug.LogWarning($"[CityData] {cityName}: Insufficient equipment for {type} — unit will deploy under-equipped.");
+
+            // ── DEDUCT RESOURCES ──
+            faction.Spend(goldCost, ironCost);
+            faction.ConsumeManpower(regimentSize);
+
+            // Deduct available equipment
+            foreach (var kvp in equipNeeds.requirements)
+            {
+                int available = (int)faction.equipment.Get(kvp.Key);
+                int consume = Mathf.Min(available, kvp.Value);
+                if (consume > 0) faction.equipment.Consume(kvp.Key, consume);
+            }
+
+            // ── QUEUE PRODUCTION ──
+            int turns = turnsOverride > 0 ? turnsOverride : GetUnitProductionTurns(type);
             
             productionQueue.Add(new ProductionQueueItem
             {
@@ -344,26 +422,85 @@ namespace NapoleonicWars.Campaign
                 turnsRemaining = turns
             });
             
-            Debug.Log($"[CityData] {cityName} queued unit {type}");
+            Debug.Log($"[CityData] {cityName} queued {type}: {turns}j, -{goldCost}g -{ironCost}⛏ -{regimentSize}MP, queue={productionQueue.Count}");
             return true;
         }
         
         public bool CanProduceUnit(UnitType type)
         {
+            bool hasBarracks = buildings.Exists(b => b.buildingType == BuildingType.Barracks && b.isConstructed);
+            bool hasStables  = buildings.Exists(b => b.buildingType == BuildingType.Stables && b.isConstructed);
+            bool hasArmory   = buildings.Exists(b => b.buildingType == BuildingType.Armory && b.isConstructed);
+            bool hasFortress = buildings.Exists(b => b.buildingType == BuildingType.Fortress && b.isConstructed);
+            int barracksLvl  = 0;
+            var bk = buildings.Find(b => b.buildingType == BuildingType.Barracks && b.isConstructed);
+            if (bk != null) barracksLvl = bk.level;
+            int stablesLvl = 0;
+            var st = buildings.Find(b => b.buildingType == BuildingType.Stables && b.isConstructed);
+            if (st != null) stablesLvl = st.level;
+
             switch (type)
             {
+                // ── MILITIA (no building required) ──
+                case UnitType.Militia:
+                case UnitType.TrainedMilitia:
+                case UnitType.MilitiaCavalry:
+                case UnitType.Partisan:
+                    return true;
+
+                // ── BASIC INFANTRY (Barracks) ──
                 case UnitType.LineInfantry:
                 case UnitType.LightInfantry:
+                case UnitType.Fusilier:
+                    return hasBarracks;
+
+                // ── ELITE INFANTRY (Barracks Lv2+) ──
                 case UnitType.Grenadier:
-                    return buildings.Exists(b => b.buildingType == BuildingType.Barracks && b.isConstructed);
+                case UnitType.Voltigeur:
+                case UnitType.Chasseur:
+                    return hasBarracks && barracksLvl >= 2;
+
+                // ── GUARD (Barracks Lv3) ──
+                case UnitType.GuardInfantry:
+                case UnitType.OldGuard:
+                    return hasBarracks && barracksLvl >= 3;
+
+                // ── BASIC CAVALRY (Stables) ──
                 case UnitType.Cavalry:
                 case UnitType.Hussar:
                 case UnitType.Lancer:
-                    return buildings.Exists(b => b.buildingType == BuildingType.Stables && b.isConstructed);
+                case UnitType.Dragoon:
+                    return hasStables;
+
+                // ── ELITE CAVALRY (Stables Lv2+) ──
+                case UnitType.Cuirassier:
+                case UnitType.GuardCavalry:
+                case UnitType.Mameluke:
+                    return hasStables && stablesLvl >= 2;
+
+                // ── ARTILLERY (Armory) ──
                 case UnitType.Artillery:
-                    return buildings.Exists(b => b.buildingType == BuildingType.Armory && b.isConstructed);
+                case UnitType.GarrisonCannon:
+                    return hasArmory;
+
+                // ── ELITE ARTILLERY (Armory + Barracks) ──
+                case UnitType.HorseArtillery:
+                case UnitType.GrandBattery:
+                case UnitType.Howitzer:
+                case UnitType.GuardArtillery:
+                    return hasArmory && hasBarracks;
+
+                // ── ENGINEERS / SAPPERS (Fortress) ──
+                case UnitType.Engineer:
+                case UnitType.Sapper:
+                    return hasFortress;
+
+                // ── MARINES ──
+                case UnitType.Marine:
+                    return hasBarracks;
+
                 default:
-                    return false;
+                    return hasBarracks; // Fallback: need at least barracks
             }
         }
         
@@ -371,14 +508,53 @@ namespace NapoleonicWars.Campaign
         {
             switch (type)
             {
-                case UnitType.LineInfantry: return 2;
-                case UnitType.LightInfantry: return 2;
-                case UnitType.Grenadier: return 3;
-                case UnitType.Cavalry: return 3;
-                case UnitType.Hussar: return 3;
-                case UnitType.Lancer: return 3;
-                case UnitType.Artillery: return 4;
-                default: return 2;
+                // ── MILITIA (fast, untrained) ──
+                case UnitType.Militia:            return 5;
+                case UnitType.TrainedMilitia:     return 8;
+                case UnitType.MilitiaCavalry:     return 10;
+                case UnitType.Partisan:           return 6;
+
+                // ── LINE INFANTRY (standard) ──
+                case UnitType.LineInfantry:       return 12;
+                case UnitType.LightInfantry:      return 10;
+                case UnitType.Fusilier:           return 14;
+
+                // ── ELITE INFANTRY (extensive training) ──
+                case UnitType.Grenadier:          return 22;
+                case UnitType.Voltigeur:          return 18;
+                case UnitType.Chasseur:           return 16;
+                case UnitType.Marine:             return 20;
+
+                // ── GUARD (long specialized training) ──
+                case UnitType.GuardInfantry:      return 35;
+                case UnitType.OldGuard:           return 45;
+
+                // ── BASIC CAVALRY (horse training) ──
+                case UnitType.Cavalry:            return 18;
+                case UnitType.Hussar:             return 16;
+                case UnitType.Lancer:             return 22;
+                case UnitType.Dragoon:            return 20;
+
+                // ── ELITE CAVALRY (long horse+rider training) ──
+                case UnitType.Cuirassier:         return 30;
+                case UnitType.GuardCavalry:       return 38;
+                case UnitType.Mameluke:           return 35;
+
+                // ── ARTILLERY (complex equipment) ──
+                case UnitType.Artillery:          return 25;
+                case UnitType.GarrisonCannon:     return 18;
+
+                // ── ELITE ARTILLERY ──
+                case UnitType.HorseArtillery:     return 35;
+                case UnitType.GrandBattery:       return 32;
+                case UnitType.Howitzer:           return 28;
+                case UnitType.GuardArtillery:     return 40;
+
+                // ── SPECIALISTS ──
+                case UnitType.Engineer:           return 25;
+                case UnitType.Sapper:             return 22;
+
+                default: return 12;
             }
         }
         

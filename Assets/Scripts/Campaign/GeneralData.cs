@@ -248,6 +248,7 @@ namespace NapoleonicWars.Campaign
                 level = Mathf.Max(1, (cmd + auth + cha) / 6)
             };
             
+            AssignStartingTraits(general);
             return general;
         }
 
@@ -265,7 +266,40 @@ namespace NapoleonicWars.Campaign
                 age = Random.Range(25, 55)
             };
             
+            AssignStartingTraits(general);
             return general;
+        }
+        
+        /// <summary>Auto-assign traits based on stats at creation.</summary>
+        private static void AssignStartingTraits(GeneralData gen)
+        {
+            // High command → offensive or defensive trait
+            if (gen.command >= 8)
+                gen.AddTrait(CharacterTrait.GetTrait(Random.value > 0.5f ? "aggressive" : "brilliant"));
+            else if (gen.command >= 7)
+                gen.AddTrait(CharacterTrait.GetTrait(Random.value > 0.5f ? "cautious" : "stalwart"));
+
+            // High authority → inspiring leader
+            if (gen.authority >= 8)
+                gen.AddTrait(CharacterTrait.GetTrait("inspiring"));
+            else if (gen.authority >= 7)
+                gen.AddTrait(CharacterTrait.GetTrait("brave"));
+
+            // High charisma → diplomat
+            if (gen.charisma >= 7)
+                gen.AddTrait(CharacterTrait.GetTrait("diplomat"));
+
+            // High intelligence → reformer
+            if (gen.intelligence >= 7)
+                gen.AddTrait(CharacterTrait.GetTrait("reformer"));
+            
+            // Random bonus trait (10% chance each)
+            if (Random.value < 0.10f) gen.AddTrait(CharacterTrait.GetTrait("siege_master"));
+            if (Random.value < 0.10f) gen.AddTrait(CharacterTrait.GetTrait("mountaineer"));
+            if (Random.value < 0.08f) gen.AddTrait(CharacterTrait.GetTrait("night_owl"));
+            if (Random.value < 0.05f) gen.AddTrait(CharacterTrait.GetTrait("old_guard"));
+            if (Random.value < 0.05f) gen.AddTrait(CharacterTrait.GetTrait("organizer"));
+            if (Random.value < 0.04f) gen.AddTrait(CharacterTrait.GetTrait("drunkard"));
         }
 
         private static string GetRandomFirstName(FactionType faction)

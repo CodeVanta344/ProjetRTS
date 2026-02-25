@@ -210,7 +210,7 @@ namespace NapoleonicWars.Units
             {
                 return currentType switch
                 {
-                    UnitType.Grenadier => UnitType.ImperialGuard,
+                    UnitType.Grenadier => UnitType.GuardInfantry,
                     UnitType.Hussar => UnitType.GuardCavalry,
                     UnitType.Artillery => UnitType.GuardArtillery,
                     _ => null

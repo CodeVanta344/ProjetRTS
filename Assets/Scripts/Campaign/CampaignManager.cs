@@ -112,7 +112,7 @@ namespace NapoleonicWars.Campaign
             campaignClock.DaysPerSeason = 90;      // 90 days per season
             campaignClock.OnDayTick += ProcessDayTick;
             campaignClock.OnSeasonTick += ProcessSeasonTick;
-            campaignClock.Pause(); // Start paused so player can orient themselves
+            campaignClock.Play(); // Start running — 1 day per 5 seconds
 
             Debug.Log($"[CampaignManager] Campaign started (REAL-TIME). Day-based: 5s/day. {playerFaction}. Provinces: {provinces.Count}, Cities: {cities.Count}, Armies: {armies.Count}");
         }
@@ -892,7 +892,7 @@ namespace NapoleonicWars.Campaign
             // Apply scale and offset to match the new heightmap image projection
             Vector2 alignedPosition = (position * mapScale) + mapOffset;
             
-            var prov = new ProvinceData(id, name, owner, alignedPosition, neighbors);
+            var prov = new ProvinceData(name, id, owner, alignedPosition, neighbors);
             provinces.Add(id, prov);
         }
 
@@ -1140,7 +1140,7 @@ namespace NapoleonicWars.Campaign
             RegisterArmy(britishMain);
 
             // Prussia
-            ArmyData prussianMain = new ArmyData("Prussian Army", "pr_main", FactionType.Prussia, "berlin");
+            ArmyData prussianMain = new ArmyData("Prussian Army", "pr_main", FactionType.Prussia, "brandenburg");
             prussianMain.AddRegiment(new RegimentData("1st Prussian Line", UnitType.LineInfantry, 60));
             prussianMain.AddRegiment(new RegimentData("2nd Prussian Line", UnitType.LineInfantry, 60));
             prussianMain.AddRegiment(new RegimentData("Prussian Grenadiers", UnitType.Grenadier, 40));
@@ -1157,7 +1157,7 @@ namespace NapoleonicWars.Campaign
             RegisterArmy(russianMain);
 
             // Austria
-            ArmyData austrianMain = new ArmyData("Austrian Army", "au_main", FactionType.Austria, "vienna");
+            ArmyData austrianMain = new ArmyData("Austrian Army", "au_main", FactionType.Austria, "lower_austria");
             austrianMain.AddRegiment(new RegimentData("1st Austrian Line", UnitType.LineInfantry, 60));
             austrianMain.AddRegiment(new RegimentData("2nd Austrian Line", UnitType.LineInfantry, 60));
             austrianMain.AddRegiment(new RegimentData("Austrian Hussars", UnitType.Hussar, 30));
@@ -1165,7 +1165,7 @@ namespace NapoleonicWars.Campaign
             RegisterArmy(austrianMain);
 
             // Spain
-            ArmyData spanishMain = new ArmyData("Spanish Royal Army", "sp_main", FactionType.Spain, "madrid");
+            ArmyData spanishMain = new ArmyData("Spanish Royal Army", "sp_main", FactionType.Spain, "castile");
             spanishMain.AddRegiment(new RegimentData("1st Spanish Line", UnitType.LineInfantry, 60));
             spanishMain.AddRegiment(new RegimentData("2nd Spanish Line", UnitType.LineInfantry, 60));
             spanishMain.AddRegiment(new RegimentData("Spanish Grenadiers", UnitType.Grenadier, 40));
@@ -1179,7 +1179,7 @@ namespace NapoleonicWars.Campaign
             RegisterArmy(spanishSouth);
 
             // Ottoman Empire
-            ArmyData ottomanMain = new ArmyData("Ottoman Imperial Army", "ot_main", FactionType.Ottoman, "constantinople");
+            ArmyData ottomanMain = new ArmyData("Ottoman Imperial Army", "ot_main", FactionType.Ottoman, "thrace");
             ottomanMain.AddRegiment(new RegimentData("Janissary Corps", UnitType.Grenadier, 50));
             ottomanMain.AddRegiment(new RegimentData("1st Nizam Infantry", UnitType.LineInfantry, 60));
             ottomanMain.AddRegiment(new RegimentData("2nd Nizam Infantry", UnitType.LineInfantry, 60));
@@ -1276,6 +1276,9 @@ namespace NapoleonicWars.Campaign
             // Initialize supply system with province data
             SupplySystem.Initialize(provinces);
 
+            // Initialize logistics convoy system
+            LogisticsConvoySystem.Initialize();
+
             foreach (var kvp in factions)
             {
                 FactionData fd = kvp.Value;
@@ -1295,9 +1298,15 @@ namespace NapoleonicWars.Campaign
 
                 // Initialize national laws (8 categories with cooldowns)
                 NationalLaws.Initialize(ft);
+
+                // Initialize supply depot at capital (first owned province)
+                if (fd.ownedProvinceIds.Count > 0)
+                {
+                    SupplyLineSystem.Initialize(ft, fd.ownedProvinceIds[0]);
+                }
             }
 
-            Debug.Log("[CampaignManager] HoI4 systems initialized (Equipment, Production, Supply, Divisions, Economy)");
+            Debug.Log("[CampaignManager] HoI4 systems initialized (Equipment, Production, Supply, Logistics, Divisions, Economy)");
         }
 
         // === TURN SYSTEM ===
@@ -1319,9 +1328,157 @@ namespace NapoleonicWars.Campaign
             // Advance the calendar by one day
             SeasonSystem.AdvanceDay();
             
-            // Daily army movement progress (could be used for continuous movement)
-            // For now, just update visuals
+            // Advance the day counter
+            currentTurn++;
+            
+            // === Daily production processing for ALL cities ===
+            foreach (var city in cities.Values)
+            {
+                if (city.productionQueue.Count > 0)
+                {
+                    var item = city.productionQueue[0];
+                    item.turnsRemaining--;
+                    
+                    Debug.Log($"[DAY {currentTurn}] {city.cityName}: {item.unitType} production — {item.turnsRemaining} days left");
+                    
+                    if (item.turnsRemaining <= 0)
+                    {
+                        Debug.Log($"[DAY {currentTurn}] {city.cityName}: PRODUCTION COMPLETE — calling CompleteDailyProduction for {item.unitType}");
+                        city.CompleteDailyProduction(item);
+                        city.productionQueue.RemoveAt(0);
+                        Debug.Log($"[DAY {currentTurn}] {city.cityName}: Queue now has {city.productionQueue.Count} items. Total armies: {armies.Count}");
+                    }
+                }
+            }
+            
+            // === Daily building construction for ALL provinces ===
+            foreach (var prov in provinces.Values)
+            {
+                foreach (var slot in prov.buildings)
+                {
+                    if (slot.isConstructing && slot.turnsToComplete > 0)
+                    {
+                        slot.turnsToComplete--;
+                        if (slot.turnsToComplete <= 0)
+                        {
+                            slot.isConstructing = false;
+                            Debug.Log($"[CampaignManager] Building {slot.type} completed in {prov.provinceName}!");
+                        }
+                    }
+                }
+            }
+            
+            // === Daily building construction for CityData buildings ===
+            foreach (var city in cities.Values)
+            {
+                foreach (var bld in city.buildings)
+                {
+                    if (bld.isConstructing && bld.constructionTurnsRemaining > 0)
+                    {
+                        bld.constructionTurnsRemaining--;
+                        if (bld.constructionTurnsRemaining <= 0)
+                        {
+                            bld.isConstructed = true;
+                            bld.isConstructing = false;
+                            Debug.Log($"[CampaignManager] Building {bld.buildingName} completed in {city.cityName}!");
+                        }
+                    }
+                }
+            }
+            
+            // === Daily research progress for ALL factions ===
+            foreach (var kvp in factions)
+            {
+                if (kvp.Value.isEliminated) continue;
+                FactionData fd = kvp.Value;
+                if (fd.techTree == null || fd.techTree.CurrentResearchId == null) continue;
+                
+                float speed = TechTree.CalculateResearchSpeedMultiplier(fd, provinces);
+                Technology completed = fd.techTree.AdvanceDailyResearch(speed);
+                
+                if (completed != null)
+                {
+                    AddFactionEvent(kvp.Key, $"Recherche terminée : {completed.name}!");
+                    Debug.Log($"[Day {currentTurn}] {kvp.Key} completed research: {completed.name} (speed was {speed:F1}x)");
+                }
+            }
+            
+            // === Daily army RATIONS consumption ===
+            bool isWinter = DifficultyManager.IsWinterTurn(currentTurn);
+            foreach (var army in armies.Values)
+            {
+                // Determine territory status
+                bool inFriendly = true;
+                if (provinces.TryGetValue(army.currentProvinceId, out var armyProv2))
+                    inFriendly = armyProv2.owner == army.faction;
+
+                army.ConsumeDailyRations(inFriendly, isWinter);
+
+                if (army.isStarving)
+                {
+                    // Halt movement — army cannot advance without food
+                    if (army.isMoving)
+                    {
+                        army.marchDaysRemaining = 0;
+                        army.isMoving = false;
+                        AddFactionEvent(army.faction, $"⚠ {army.armyName} est à court de vivres et ne peut plus avancer !");
+                        Debug.Log($"[Day {currentTurn}] {army.armyName} STARVING — movement halted!");
+                    }
+
+                    // Apply starvation attrition + fatigue
+                    army.ApplyStarvationEffects();
+                }
+                else if (army.isLowOnFood)
+                {
+                    // Low on food — org drops
+                    army.organization = Mathf.Max(0f, army.organization - 5f);
+                }
+            }
+
+            // === Daily army march processing ===
             var map3D = FindAnyObjectByType<CampaignMap3D>();
+            foreach (var army in armies.Values)
+            {
+                if (!army.isMoving || army.marchDaysRemaining <= 0) continue;
+                
+                army.marchDaysRemaining--;
+                army.turnsCampaigning++;
+                army.fatigue = Mathf.Min(1f, army.fatigue + 0.05f);
+                
+                if (army.marchDaysRemaining <= 0)
+                {
+                    // Don't finalize here — let UpdateArmyPositions handle the visual arrival
+                    // and province assignment (it has access to world positions)
+                    // Just mark as no more days remaining
+                    army.marchDaysRemaining = 0;
+                    
+                    Debug.Log($"[Campaign] {army.armyName} arrived at {army.currentProvinceId}!");
+                    
+                    // Check for battle at destination
+                    if (provinces.TryGetValue(army.currentProvinceId, out var arrivalProv))
+                    {
+                        if (arrivalProv.owner != army.faction && AreAtWar(army.faction, arrivalProv.owner))
+                        {
+                            ArmyData enemy = FindArmyInProvince(army.currentProvinceId, army.faction);
+                            if (enemy == null) enemy = new ArmyData("Garrison", "garrison_" + army.currentProvinceId, arrivalProv.owner, army.currentProvinceId);
+                            OnBattleTriggered?.Invoke(army, enemy, arrivalProv);
+                        }
+                    }
+                }
+            }
+            
+            // === Daily trespass penalty: armies in neutral territory reduce relations ===
+            foreach (var army in armies.Values)
+            {
+                if (army.isMoving) continue; // Only stationary armies cause trespass
+                if (!provinces.TryGetValue(army.currentProvinceId, out var armyProv)) continue;
+                if (armyProv.owner == army.faction || !factions.ContainsKey(armyProv.owner)) continue;
+                if (AreAtWar(army.faction, armyProv.owner)) continue; // Already at war, no trespass
+                
+                // -2 per day while trespassing
+                ApplyDiplomaticPenalty(army.faction, armyProv.owner, -2, 
+                    $"Occupation militaire de {armyProv.provinceName}");
+            }
             
             // Fire turn-changed event for UI refresh (date display etc.)
             OnTurnChanged?.Invoke(currentTurn, playerFaction);
@@ -1346,11 +1503,13 @@ namespace NapoleonicWars.Campaign
             // Supply system — apply attrition
             SupplySystem.ProcessSupplyTurn(armies, factions);
 
+            // Supply line system — calculate supply chains, draw from depots, apply advanced attrition
+            SupplyLineSystem.ProcessSupplyTurn(this);
+
             // Co-op request expiry
             Network.CoopRequestSystem.Instance?.ProcessTurnExpiry(currentTurn);
 
-            // Turn counter (legacy — 1 turn = 1 season)
-            currentTurn++;
+            // Faction turn assignment (legacy)
             currentFactionTurn = playerFaction;
 
             // Reset movement for all armies
@@ -1366,7 +1525,7 @@ namespace NapoleonicWars.Campaign
             // Naval system
             NavalSystem.ProcessNavalTurn(this);
 
-            // Supply depots
+            // Supply depots — cleanup lost provinces
             SupplyLineSystem.CleanupDepots(this);
 
             // Diplomacy
@@ -1568,19 +1727,72 @@ namespace NapoleonicWars.Campaign
 
         // === ARMY MOVEMENT ===
 
+        /// <summary>
+        /// Create a new army in a province or return existing friendly army there.
+        /// Used when units are produced in cities.
+        /// </summary>
+        public ArmyData CreateOrGetArmyInProvince(string provinceId, FactionType faction)
+        {
+            // Check if we already have an army in this province
+            foreach (var army in armies.Values)
+            {
+                if (army.currentProvinceId == provinceId && army.faction == faction)
+                    return army;
+            }
+
+            // Create a new army
+            string cityName = GetProvinceName(provinceId);
+            string armyId = $"army_{faction}_{provinceId}_{System.Guid.NewGuid().ToString().Substring(0, 6)}";
+            string armyName = $"Armée de {cityName}";
+
+            ArmyData newArmy = new ArmyData(armyName, armyId, faction, provinceId);
+            armies[armyId] = newArmy;
+
+            if (factions.ContainsKey(faction))
+                factions[faction].armyIds.Add(armyId);
+
+            Debug.Log($"[CampaignManager] Created army '{armyName}' in {cityName} for {faction}");
+            
+            // Immediately create visual marker on the map
+            var map3D = FindAnyObjectByType<CampaignMap3D>();
+            if (map3D != null)
+            {
+                try
+                {
+                    map3D.CreateArmyMarker(newArmy);
+                    Debug.Log($"[CampaignManager] Visual marker created for '{armyName}'");
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"[CampaignManager] Failed to create marker for '{armyName}': {e}");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"[CampaignManager] No CampaignMap3D found — cannot create visual marker!");
+            }
+            
+            return newArmy;
+        }
+
         public bool MoveArmy(string armyId, string targetProvinceId)
         {
-            if (!armies.TryGetValue(armyId, out var army)) return false;
+            if (!armies.TryGetValue(armyId, out var army))
+            {
+                Debug.LogWarning($"[MoveArmy] Army '{armyId}' NOT FOUND in armies dict (count={armies.Count})");
+                return false;
+            }
             
-            // MULTIPLAYER CHECK: If playing multiplayer, we must send an RPC first,
-            // unless we are the Server processing the queued action right now.
+            // MULTIPLAYER CHECK: Only if actually connected to a multiplayer session
+            // Skip this entirely in single-player to avoid accidentally queuing actions
             if (NapoleonicWars.Network.NetworkLobbyManager.Instance != null && 
-                NapoleonicWars.Network.NetworkLobbyManager.Instance.IsConnected)
+                NapoleonicWars.Network.NetworkLobbyManager.Instance.IsConnected &&
+                Unity.Netcode.NetworkManager.Singleton != null &&
+                Unity.Netcode.NetworkManager.Singleton.IsClient)
             {
                 var netCampaign = NapoleonicWars.Network.NetworkCampaignManager.Instance;
                 if (netCampaign != null && !netCampaign.IsServerProcessingActions)
                 {
-                    // If we're a client (or host in input phase), queue the action and return
                     netCampaign.QueueActionServerRpc(new NapoleonicWars.Network.NetworkCampaignAction
                     {
                         faction = army.faction,
@@ -1589,72 +1801,123 @@ namespace NapoleonicWars.Campaign
                         targetId = targetProvinceId,
                         priority = 10
                     });
-                    Debug.Log($"[CampaignManager] Army {armyId} movement queued for network turn resolution.");
+                    Debug.Log($"[MoveArmy] Army {armyId} movement queued for network turn resolution.");
                     return true;
                 }
             }
 
-            if (army.movementPoints <= 0) return false;
-            string currentProvId = army.currentProvinceId;
-            if (!provinces.TryGetValue(currentProvId, out var currentProv)) return false;
+            // Resolve current position — if army is already marching, use its current province
+            string currentProvId = army.isMoving ? army.originProvinceId : army.currentProvinceId;
+            if (string.IsNullOrEmpty(currentProvId)) currentProvId = army.currentProvinceId;
             
-            // Check if neighbors
-            if (!currentProv.neighborIds.Contains(targetProvinceId)) return false;
-            if (!provinces.TryGetValue(targetProvinceId, out var targetProv)) return false;
+            if (!provinces.TryGetValue(currentProvId, out var currentProv))
+            {
+                Debug.LogWarning($"[MoveArmy] Current province '{currentProvId}' NOT FOUND");
+                return false;
+            }
+            if (!provinces.TryGetValue(targetProvinceId, out var targetProv))
+            {
+                Debug.LogWarning($"[MoveArmy] Target province '{targetProvinceId}' NOT FOUND");
+                return false;
+            }
             
-            // Battle Check — target owned by a different faction
-            if (targetProv.owner != army.faction)
+            // Same province check
+            if (currentProvId == targetProvinceId)
+            {
+                Debug.LogWarning($"[MoveArmy] ❌ {army.armyName} already at target '{targetProv.provinceName}' (currentProvId='{currentProvId}' == targetId='{targetProvinceId}')");
+                return false;
+            }
+            
+            // === DIPLOMATIC CONSEQUENCES for entering foreign territory ===
+            if (targetProv.owner != army.faction && factions.ContainsKey(targetProv.owner))
             {
                 if (AreAtWar(army.faction, targetProv.owner))
                 {
-                    Debug.Log($"[Campaign] {army.armyName} attacks {targetProv.provinceName}!");
-                    
-                    // In multiplayer, battle initiation is handled by the server
-                    if (NapoleonicWars.Network.NetworkLobbyManager.Instance != null && 
-                        NapoleonicWars.Network.NetworkLobbyManager.Instance.IsConnected)
-                    {
-                        var netCampaign = NapoleonicWars.Network.NetworkCampaignManager.Instance;
-                        if (netCampaign != null && !netCampaign.IsServerProcessingActions)
-                        {
-                            netCampaign.QueueActionServerRpc(new NapoleonicWars.Network.NetworkCampaignAction
-                            {
-                                faction = army.faction,
-                                actionType = NapoleonicWars.Network.CampaignActionType.AttackProvince,
-                                sourceId = armyId,
-                                targetId = targetProvinceId,
-                                priority = 100 // Battles resolve first
-                            });
-                            return true;
-                        }
-                    }
-                    else
-                    {
-                        // Singleplayer: trigger battle event
-                        ArmyData enemyArmy = FindArmyInProvince(targetProvinceId, army.faction);
-                        if (enemyArmy == null) enemyArmy = new ArmyData("Garrison", "garrison_" + targetProvinceId, targetProv.owner, targetProvinceId);
-                        OnBattleTriggered?.Invoke(army, enemyArmy, targetProv);
-                    }
-                    return true;
+                    Debug.Log($"[Campaign] {army.armyName} marching into enemy territory: {targetProv.provinceName}");
                 }
                 else
                 {
-                    Debug.Log($"[Campaign] Cannot move. Not at war with {targetProv.owner}");
-                    return false;
+                    Debug.Log($"[Campaign] ⚠ {army.armyName} trespassing into {targetProv.owner}'s territory ({targetProv.provinceName})!");
+                    ApplyDiplomaticPenalty(army.faction, targetProv.owner, -10, "Trespass militaire");
                 }
             }
 
-            // Capture province if enemy-owned
-            if (targetProv.owner != army.faction)
+            // Start multi-day march to target province
+            army.originProvinceId = army.currentProvinceId;
+            army.targetProvinceId = targetProvinceId;
+            army.isMoving = true;
+            army.isResting = false;
+            
+            // Calculate march days: base distance + terrain modifier
+            // Map positions are normalized 0-1, so distance ~0.05-0.3 between provinces
+            float distance = Vector2.Distance(currentProv.mapPosition, targetProv.mapPosition);
+            int distanceDays = Mathf.Max(1, Mathf.RoundToInt(distance * 30f));
+            
+            float terrainMult = 1f;
+            switch (targetProv.terrainType)
             {
-                FactionType oldOwner = targetProv.owner;
-                if (factions.ContainsKey(oldOwner))
-                    factions[oldOwner].ownedProvinceIds.Remove(targetProvinceId);
+                case ProvinceTerrainType.Mountains: terrainMult = 2.0f; break;
+                case ProvinceTerrainType.Forest:
+                case ProvinceTerrainType.Hills:
+                case ProvinceTerrainType.Marsh: terrainMult = 1.5f; break;
+                case ProvinceTerrainType.Plains:
+                case ProvinceTerrainType.Desert:
+                case ProvinceTerrainType.Coastal: terrainMult = 1.0f; break;
+                case ProvinceTerrainType.Urban: terrainMult = 1.2f; break;
+                default: terrainMult = 1.0f; break;
+            }
+            
+            int totalDays = Mathf.Max(1, Mathf.RoundToInt(distanceDays * terrainMult));
+            army.marchDaysRemaining = totalDays;
+            army.marchDaysTotal = totalDays;
+            
+            // Give immediate visual progress so the army starts moving THIS frame
+            // instead of waiting for the next day tick (5 seconds)
+            army.marchDaysRemaining = Mathf.Max(0, totalDays - 1);
+            
+            Debug.Log($"[MoveArmy] ✅ {army.armyName} begins march to {targetProv.provinceName} ({totalDays} days, dist={distance:F3}, terrain={targetProv.terrainType})");
 
-                targetProv.owner = army.faction;
-                factions[army.faction].ownedProvinceIds.Add(targetProvinceId);
-                Debug.Log($"{army.faction} captured {targetProv.provinceName}!");
+            return true;
+        }
+
+        /// <summary>
+        /// Move army to any world position (free movement — not limited to province centers).
+        /// </summary>
+        public bool MoveArmyToPosition(string armyId, Vector3 worldPos, Vector3 currentWorldPos)
+        {
+            if (!armies.TryGetValue(armyId, out var army))
+            {
+                Debug.LogWarning($"[MoveArmyFree] Army '{armyId}' NOT FOUND");
+                return false;
             }
 
+            // Only player can order moves
+            if (army.faction != playerFaction)
+            {
+                Debug.LogWarning($"[MoveArmyFree] {army.armyName} is {army.faction}, not player");
+                return false;
+            }
+
+            // Record origin position (current marker position in world space)
+            army.originWorldPosition = currentWorldPos;
+            army.targetWorldPosition = worldPos;
+            army.isMoving = true;
+            army.isResting = false;
+
+            // Remember origin province for game logic
+            army.originProvinceId = army.currentProvinceId;
+
+            // targetProvinceId will be updated on arrival to nearest province
+            army.targetProvinceId = army.currentProvinceId;
+
+            // Calculate march days from 3D distance
+            float dist3D = Vector3.Distance(currentWorldPos, worldPos);
+            int totalDays = Mathf.Max(1, Mathf.RoundToInt(dist3D / 200f)); // ~200 units per day
+
+            army.marchDaysRemaining = totalDays;
+            army.marchDaysTotal = totalDays;
+
+            Debug.Log($"[MoveArmyFree] ✅ {army.armyName} moving to world({worldPos.x:F0},{worldPos.y:F0},{worldPos.z:F0}), dist={dist3D:F0}, {totalDays} days");
             return true;
         }
 
@@ -1666,6 +1929,31 @@ namespace NapoleonicWars.Campaign
                     return army;
             }
             return null;
+        }
+
+        // === DIPLOMACY: TRESPASS SYSTEM ===
+
+        /// <summary>
+        /// Apply diplomatic penalty. At -50 opinion, victim declares war (hybrid war).
+        /// </summary>
+        public void ApplyDiplomaticPenalty(FactionType aggressor, FactionType victim, int amount, string reason)
+        {
+            if (aggressor == victim) return;
+            if (!factions.TryGetValue(victim, out var victimFaction)) return;
+            
+            if (!victimFaction.relations.ContainsKey(aggressor))
+                victimFaction.relations[aggressor] = new DiplomaticRelation();
+            
+            var rel = victimFaction.relations[aggressor];
+            rel.relationScore += amount;
+            Debug.Log($"[Diplomacy] {aggressor} → {victim}: {amount} ({reason}). Opinion: {rel.relationScore}");
+            
+            // Hybrid war threshold: at -50 opinion, declare war
+            if (rel.relationScore <= -50 && rel.state != DiplomacyState.War)
+            {
+                Debug.Log($"[Diplomacy] ⚠ {victim} declares war on {aggressor} due to '{reason}'!");
+                DeclareWar(aggressor, victim);
+            }
         }
 
         // === BUILDING ===
@@ -2004,46 +2292,94 @@ namespace NapoleonicWars.Campaign
                 return false;
             }
 
-            // Check building requirements - use new tiered system
+            // Check building requirements - tiered system per unit branch
             bool canRecruit = false;
             switch (unitType)
             {
-                case UnitType.LineInfantry:
-                case UnitType.LightInfantry:
-                    // Basic infantry can recruit from any barracks level
+                // === INFANTRY BRANCH ===
+                case UnitType.Militia:
+                case UnitType.TrainedMilitia:
                     canRecruit = prov.hasBarracks || HasBuildingType(prov, BuildingType.VillageBarracks) || 
                                  HasBuildingType(prov, BuildingType.ProvincialBarracks);
                     break;
+                case UnitType.LineInfantry:
+                case UnitType.LightInfantry:
+                case UnitType.Fusilier:
+                    canRecruit = HasBuildingType(prov, BuildingType.VillageBarracks) || 
+                                 HasBuildingType(prov, BuildingType.ProvincialBarracks);
+                    break;
                 case UnitType.Grenadier:
-                    // Grenadiers need better training facilities
+                case UnitType.Voltigeur:
                     canRecruit = HasBuildingType(prov, BuildingType.ProvincialBarracks) || 
                                  HasBuildingType(prov, BuildingType.MilitaryAcademy);
                     break;
-                case UnitType.ImperialGuard:
-                    // Guard units need top-tier academy
+                case UnitType.Chasseur:
+                    canRecruit = HasBuildingType(prov, BuildingType.MilitaryAcademy) ||
+                                 HasBuildingType(prov, BuildingType.RoyalMilitaryCollege);
+                    break;
+                case UnitType.GuardInfantry:
                     canRecruit = HasBuildingType(prov, BuildingType.RoyalMilitaryCollege) || 
                                  HasBuildingType(prov, BuildingType.MilitaryUniversity);
                     break;
-                case UnitType.Cavalry:
-                    // Basic cavalry
+                case UnitType.OldGuard:
+                    canRecruit = HasBuildingType(prov, BuildingType.MilitaryUniversity);
+                    break;
+
+                // === CAVALRY BRANCH ===
+                case UnitType.MilitiaCavalry:
+                case UnitType.Dragoon:
                     canRecruit = prov.hasStables;
+                    break;
+                case UnitType.Cavalry:
+                    canRecruit = prov.hasStables && (prov.hasBarracks || HasBuildingType(prov, BuildingType.VillageBarracks));
                     break;
                 case UnitType.Hussar:
                 case UnitType.Lancer:
-                    // Elite cavalry need better facilities
                     canRecruit = HasBuildingType(prov, BuildingType.ProvincialBarracks) && prov.hasStables;
                     break;
+                case UnitType.Cuirassier:
+                    canRecruit = HasBuildingType(prov, BuildingType.MilitaryAcademy) && prov.hasStables;
+                    break;
                 case UnitType.GuardCavalry:
-                    // Guard cavalry need military college
                     canRecruit = HasBuildingType(prov, BuildingType.RoyalMilitaryCollege);
                     break;
-                case UnitType.Artillery:
-                    // Basic artillery
+                case UnitType.Mameluke:
+                    canRecruit = HasBuildingType(prov, BuildingType.MilitaryUniversity);
+                    break;
+
+                // === ARTILLERY BRANCH ===
+                case UnitType.GarrisonCannon:
                     canRecruit = prov.hasArmory || HasBuildingType(prov, BuildingType.SmallArtillerySchool);
                     break;
+                case UnitType.Artillery:
+                    canRecruit = HasBuildingType(prov, BuildingType.SmallArtillerySchool) ||
+                                 HasBuildingType(prov, BuildingType.ProvincialArtillerySchool);
+                    break;
+                case UnitType.HorseArtillery:
+                    canRecruit = HasBuildingType(prov, BuildingType.ProvincialArtillerySchool) && prov.hasStables;
+                    break;
+                case UnitType.Howitzer:
+                    canRecruit = HasBuildingType(prov, BuildingType.RoyalArtilleryAcademy);
+                    break;
+                case UnitType.GrandBattery:
+                    canRecruit = HasBuildingType(prov, BuildingType.GrandArtilleryAcademy);
+                    break;
                 case UnitType.GuardArtillery:
-                    // Guard artillery needs imperial academy
                     canRecruit = HasBuildingType(prov, BuildingType.ImperialArtilleryAcademy);
+                    break;
+
+                // === SPECIAL UNITS ===
+                case UnitType.Engineer:
+                    canRecruit = HasBuildingType(prov, BuildingType.MilitaryAcademy);
+                    break;
+                case UnitType.Sapper:
+                    canRecruit = HasBuildingType(prov, BuildingType.RoyalMilitaryCollege);
+                    break;
+                case UnitType.Marine:
+                    canRecruit = HasBuildingType(prov, BuildingType.ProvincialBarracks) && prov.isCoastal;
+                    break;
+                case UnitType.Partisan:
+                    canRecruit = prov.hasBarracks || HasBuildingType(prov, BuildingType.VillageBarracks);
                     break;
             }
 
@@ -2272,6 +2608,27 @@ namespace NapoleonicWars.Campaign
             if (!factions.ContainsKey(a) || !factions.ContainsKey(b)) return false;
             if (!factions[a].relations.ContainsKey(b)) return false;
             return factions[a].relations[b].state == DiplomacyState.War;
+        }
+        
+        /// <summary>Declare war between two factions (sets both sides)</summary>
+        public void DeclareWar(FactionType a, FactionType b)
+        {
+            if (a == b) return;
+            if (!factions.ContainsKey(a) || !factions.ContainsKey(b)) return;
+            
+            // Set A's view of B
+            if (!factions[a].relations.ContainsKey(b))
+                factions[a].relations[b] = new DiplomaticRelation();
+            factions[a].relations[b].state = DiplomacyState.War;
+            factions[a].relations[b].turnsAtWar = 0;
+            
+            // Set B's view of A
+            if (!factions[b].relations.ContainsKey(a))
+                factions[b].relations[a] = new DiplomaticRelation();
+            factions[b].relations[a].state = DiplomacyState.War;
+            factions[b].relations[a].turnsAtWar = 0;
+            
+            Debug.Log($"[Diplomacy] WAR DECLARED between {a} and {b}!");
         }
 
         // === SAVE / LOAD ===

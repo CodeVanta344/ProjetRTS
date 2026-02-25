@@ -256,7 +256,7 @@ namespace NapoleonicWars.Units
         {
             UnitData data = ScriptableObject.CreateInstance<UnitData>();
             data.unitName = GetFactionName(faction) + " Imperial Guard";
-            data.unitType = UnitType.ImperialGuard;
+            data.unitType = UnitType.GuardInfantry;
             data.faction = faction;
             data.maxHealth = 160f;
             data.moveSpeed = 3.5f;
@@ -374,7 +374,7 @@ namespace NapoleonicWars.Units
                 UnitType.Hussar => CreateHussar(faction),
                 UnitType.Lancer => CreateLancer(faction),
                 UnitType.Artillery => CreateArtillery(faction),
-                UnitType.ImperialGuard => CreateImperialGuard(faction),
+                UnitType.GuardInfantry => CreateImperialGuard(faction),
                 UnitType.GuardCavalry => CreateGuardCavalry(faction),
                 UnitType.GuardArtillery => CreateGuardArtillery(faction),
                 _ => CreateLineInfantry(faction)

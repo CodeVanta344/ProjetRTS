@@ -4,18 +4,41 @@ namespace NapoleonicWars.Data
 {
     public enum UnitType
     {
-        LineInfantry,
-        LightInfantry,
-        Grenadier,
-        Cavalry,
-        Lancer,
-        Hussar,
-        Artillery,
-        
-        // Elite Guard Units (Late Game)
-        ImperialGuard,      // Napoleon's Old Guard - ultimate infantry
-        GuardCavalry,       // Elite mounted troops
-        GuardArtillery      // Emperor's personal guns
+        // ===== INFANTRY BRANCH (10 tiers) =====
+        Militia,                // Tier 0 — untrained peasant levy, available from start
+        TrainedMilitia,         // Tier 1 — basic drill, slightly better morale
+        LineInfantry,           // Tier 2 — standard musket line, backbone of armies
+        LightInfantry,          // Tier 3 — skirmishers, faster, lower morale
+        Fusilier,               // Tier 4 — disciplined fire, improved accuracy
+        Grenadier,              // Tier 5 — elite heavy infantry, high morale
+        Voltigeur,              // Tier 6 — French-style elite skirmishers
+        Chasseur,               // Tier 7 — elite light infantry, rifles
+        GuardInfantry,          // Tier 8 — imperial guard infantry
+        OldGuard,               // Tier 9 — Napoleon's immortal veterans, best infantry
+
+        // ===== CAVALRY BRANCH (8 tiers) =====
+        MilitiaCavalry,         // Tier 0 — mounted militia, poor training
+        Dragoon,                // Tier 1 — mounted infantry, versatile
+        Cavalry,                // Tier 2 — standard line cavalry
+        Hussar,                 // Tier 3 — light cavalry, fast raiding
+        Lancer,                 // Tier 4 — shock lance cavalry
+        Cuirassier,             // Tier 5 — armored heavy cavalry
+        GuardCavalry,           // Tier 6 — elite mounted guard
+        Mameluke,               // Tier 7 — exotic elite cavalry, best horsemen
+
+        // ===== ARTILLERY BRANCH (6 tiers) =====
+        GarrisonCannon,         // Tier 0 — basic fixed cannon
+        Artillery,              // Tier 1 — standard field artillery
+        HorseArtillery,         // Tier 2 — mobile horse-drawn guns
+        Howitzer,               // Tier 3 — indirect fire, area damage
+        GrandBattery,           // Tier 4 — massed artillery formation
+        GuardArtillery,         // Tier 5 — the Emperor's personal guns
+
+        // ===== SPECIAL UNITS (4) =====
+        Engineer,               // Builds fortifications, bridges
+        Sapper,                 // Siege specialist, breaches walls
+        Marine,                 // Naval infantry, coastal assault
+        Partisan                // Guerrilla fighters, ambush bonus
     }
 
     public enum FactionType

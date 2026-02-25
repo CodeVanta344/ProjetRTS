@@ -24,8 +24,8 @@ namespace NapoleonicWars.Campaign
         public bool IsSiegeBattle { get; private set; }
         
         [Header("Scene Names")]
-        [SerializeField] private string battleSceneName = "BattleScene";
-        [SerializeField] private string campaignSceneName = "CampaignScene";
+        [SerializeField] private string battleSceneName = "Battle";
+        [SerializeField] private string campaignSceneName = "Campaign";
         
         [Header("Battle Settings")]
         [SerializeField] private bool autoTransitionToBattle = true;

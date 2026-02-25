@@ -16,6 +16,15 @@ namespace NapoleonicWars.Campaign
         public bool isMoving;
         public int movementPoints = 2;
         public int maxMovementPoints = 2;
+        
+        // March movement
+        public string originProvinceId;        // Province army is marching FROM
+        public int marchDaysRemaining = 0;     // Days left to reach target
+        public int marchDaysTotal = 0;         // Total days for march
+
+        // Free-form movement (click anywhere on map)
+        public Vector3 targetWorldPosition;    // Exact world position to move to
+        public Vector3 originWorldPosition;    // World position where march started
 
         // === HOI4 ADDITIONS ===
         public float organization = 100f;      // 0-100, drops in combat, recovers at rest
@@ -27,6 +36,12 @@ namespace NapoleonicWars.Campaign
         public int turnsCampaigning = 0;       // Turns since last rest (fatigue tracker)
         public float fatigue = 0f;             // 0-1, increases while campaigning, reduces org recovery
         public bool isResting = false;         // True if army stayed in same province without orders
+
+        // === SUPPLY / RATIONS ===
+        public float currentRations = 15f;     // Days of food remaining
+        public float maxRations = 30f;         // Max ration capacity
+        public bool isStarving => currentRations <= 0f;
+        public bool isLowOnFood => currentRations > 0f && currentRations <= 5f;
 
         public List<RegimentData> regiments = new List<RegimentData>();
 
@@ -145,6 +160,74 @@ namespace NapoleonicWars.Campaign
                 reg.currentSize = Mathf.Max(1, reg.currentSize - losses);
             }
         }
+
+        // === SUPPLY & RATIONS ===
+
+        /// <summary>
+        /// Consume daily rations. Rates vary by army status.
+        /// Returns true if army has food, false if starving.
+        /// </summary>
+        public bool ConsumeDailyRations(bool inFriendlyTerritory, bool isWinter)
+        {
+            float consumption;
+
+            if (isMoving)
+                consumption = 1.0f; // Full consumption when marching
+            else if (inFriendlyTerritory)
+                consumption = 0.3f; // Foraging in friendly territory
+            else
+                consumption = 0.7f; // Reduced foraging in enemy territory
+
+            // Winter multiplier
+            if (isWinter)
+                consumption *= 1.5f;
+
+            // Scale by army size (per 100 soldiers)
+            float sizeScale = TotalSoldiers / 100f;
+            consumption *= Mathf.Max(0.1f, sizeScale);
+
+            currentRations = Mathf.Max(0f, currentRations - consumption);
+            return currentRations > 0f;
+        }
+
+        /// <summary>Receive supply rations from a supply wagon.</summary>
+        public void ReceiveSupply(float rations)
+        {
+            currentRations = Mathf.Min(maxRations, currentRations + rations);
+        }
+
+        /// <summary>
+        /// Get combat penalty multiplier based on supply status.
+        /// Returns (moraleMult, attackMult, defenseMult).
+        /// </summary>
+        public (float morale, float attack, float defense) GetSupplyPenalty()
+        {
+            if (currentRations >= 5f)
+                return (1.0f, 1.0f, 1.0f);         // Well-fed
+            else if (currentRations > 0f)
+                return (0.8f, 0.9f, 0.9f);           // Low on food
+            else
+                return (0.5f, 0.7f, 0.6f);           // Starving
+        }
+
+        /// <summary>Apply starvation effects: attrition + fatigue.</summary>
+        public void ApplyStarvationEffects()
+        {
+            if (!isStarving) return;
+
+            // Attrition: lose 1-2% soldiers per day
+            foreach (var reg in regiments)
+            {
+                int losses = Mathf.Max(0, Mathf.CeilToInt(reg.currentSize * Random.Range(0.01f, 0.02f)));
+                reg.currentSize = Mathf.Max(1, reg.currentSize - losses);
+            }
+
+            // Fatigue surges
+            fatigue = Mathf.Min(1f, fatigue + 0.15f);
+
+            // Organization drops sharply
+            organization = Mathf.Max(0f, organization - 10f);
+        }
     }
 
     [System.Serializable]
@@ -180,54 +263,87 @@ namespace NapoleonicWars.Campaign
             maxSize = size;
             currentSize = size;
 
-            switch (type)
-            {
-                case UnitType.LineInfantry:
-                case UnitType.LightInfantry:
-                    maintenanceCostPerTurn = size * 1f;
-                    break;
-                case UnitType.Grenadier:
-                    maintenanceCostPerTurn = size * 1.5f;
-                    break;
-                case UnitType.Cavalry:
-                case UnitType.Hussar:
-                case UnitType.Lancer:
-                    maintenanceCostPerTurn = size * 2f;
-                    break;
-                case UnitType.Artillery:
-                    maintenanceCostPerTurn = size * 3f;
-                    break;
-            }
+            maintenanceCostPerTurn = size * GetMaintenancePerSoldier(type);
         }
 
         public static int GetRecruitCostGold(UnitType type)
         {
-            switch (type)
+            return type switch
             {
-                case UnitType.LineInfantry: return 150;
-                case UnitType.LightInfantry: return 180;
-                case UnitType.Grenadier: return 250;
-                case UnitType.Cavalry: return 300;
-                case UnitType.Hussar: return 320;
-                case UnitType.Lancer: return 310;
-                case UnitType.Artillery: return 500;
-                default: return 100;
-            }
+                // Infantry (cheapest → most expensive)
+                UnitType.Militia => 50,
+                UnitType.TrainedMilitia => 80,
+                UnitType.LineInfantry => 150,
+                UnitType.LightInfantry => 180,
+                UnitType.Fusilier => 220,
+                UnitType.Grenadier => 280,
+                UnitType.Voltigeur => 320,
+                UnitType.Chasseur => 380,
+                UnitType.GuardInfantry => 500,
+                UnitType.OldGuard => 700,
+                // Cavalry
+                UnitType.MilitiaCavalry => 120,
+                UnitType.Dragoon => 250,
+                UnitType.Cavalry => 300,
+                UnitType.Hussar => 340,
+                UnitType.Lancer => 360,
+                UnitType.Cuirassier => 450,
+                UnitType.GuardCavalry => 600,
+                UnitType.Mameluke => 800,
+                // Artillery
+                UnitType.GarrisonCannon => 200,
+                UnitType.Artillery => 400,
+                UnitType.HorseArtillery => 500,
+                UnitType.Howitzer => 650,
+                UnitType.GrandBattery => 900,
+                UnitType.GuardArtillery => 1200,
+                // Special
+                UnitType.Engineer => 300,
+                UnitType.Sapper => 400,
+                UnitType.Marine => 350,
+                UnitType.Partisan => 100,
+                _ => 100
+            };
         }
 
         public static int GetRecruitTime(UnitType type)
         {
-            switch (type)
+            return type switch
             {
-                case UnitType.LineInfantry: return 1;
-                case UnitType.LightInfantry: return 1;
-                case UnitType.Grenadier: return 2;
-                case UnitType.Cavalry: return 2;
-                case UnitType.Hussar: return 2;
-                case UnitType.Lancer: return 2;
-                case UnitType.Artillery: return 3;
-                default: return 1;
-            }
+                // Infantry
+                UnitType.Militia => 1,
+                UnitType.TrainedMilitia => 1,
+                UnitType.LineInfantry => 2,
+                UnitType.LightInfantry => 2,
+                UnitType.Fusilier => 2,
+                UnitType.Grenadier => 3,
+                UnitType.Voltigeur => 3,
+                UnitType.Chasseur => 3,
+                UnitType.GuardInfantry => 4,
+                UnitType.OldGuard => 5,
+                // Cavalry
+                UnitType.MilitiaCavalry => 1,
+                UnitType.Dragoon => 2,
+                UnitType.Cavalry => 2,
+                UnitType.Hussar => 3,
+                UnitType.Lancer => 3,
+                UnitType.Cuirassier => 3,
+                UnitType.GuardCavalry => 4,
+                UnitType.Mameluke => 5,
+                // Artillery
+                UnitType.GarrisonCannon => 2,
+                UnitType.Artillery => 3,
+                UnitType.HorseArtillery => 3,
+                UnitType.Howitzer => 4,
+                UnitType.GrandBattery => 5,
+                UnitType.GuardArtillery => 6,
+                // Special
+                UnitType.Engineer => 3,
+                UnitType.Sapper => 3,
+                UnitType.Marine => 3,
+                UnitType.Partisan => 1,
+                _ => 1
+            };
         }
 
         /// <summary>Manpower cost to recruit this regiment type</summary>
@@ -238,20 +354,76 @@ namespace NapoleonicWars.Campaign
 
         public static int GetDefaultSize(UnitType type)
         {
-            switch (type)
+            return type switch
             {
-                case UnitType.LineInfantry: return 60;
-                case UnitType.LightInfantry: return 40;
-                case UnitType.Grenadier: return 40;
-                case UnitType.Cavalry: return 30;
-                case UnitType.Hussar: return 30;
-                case UnitType.Lancer: return 30;
-                case UnitType.Artillery: return 6;
-                case UnitType.ImperialGuard: return 40;
-                case UnitType.GuardCavalry: return 25;
-                case UnitType.GuardArtillery: return 6;
-                default: return 60;
-            }
+                // Infantry
+                UnitType.Militia => 80,
+                UnitType.TrainedMilitia => 70,
+                UnitType.LineInfantry => 60,
+                UnitType.LightInfantry => 40,
+                UnitType.Fusilier => 50,
+                UnitType.Grenadier => 40,
+                UnitType.Voltigeur => 35,
+                UnitType.Chasseur => 30,
+                UnitType.GuardInfantry => 40,
+                UnitType.OldGuard => 30,
+                // Cavalry
+                UnitType.MilitiaCavalry => 40,
+                UnitType.Dragoon => 30,
+                UnitType.Cavalry => 30,
+                UnitType.Hussar => 25,
+                UnitType.Lancer => 25,
+                UnitType.Cuirassier => 20,
+                UnitType.GuardCavalry => 20,
+                UnitType.Mameluke => 15,
+                // Artillery
+                UnitType.GarrisonCannon => 4,
+                UnitType.Artillery => 6,
+                UnitType.HorseArtillery => 6,
+                UnitType.Howitzer => 4,
+                UnitType.GrandBattery => 12,
+                UnitType.GuardArtillery => 8,
+                // Special
+                UnitType.Engineer => 30,
+                UnitType.Sapper => 25,
+                UnitType.Marine => 40,
+                UnitType.Partisan => 50,
+                _ => 60
+            };
+        }
+
+        public static float GetMaintenancePerSoldier(UnitType type)
+        {
+            return type switch
+            {
+                // Infantry — cheapest
+                UnitType.Militia or UnitType.TrainedMilitia => 0.5f,
+                UnitType.LineInfantry or UnitType.LightInfantry => 1f,
+                UnitType.Fusilier => 1.2f,
+                UnitType.Grenadier => 1.5f,
+                UnitType.Voltigeur or UnitType.Chasseur => 1.8f,
+                UnitType.GuardInfantry => 2.5f,
+                UnitType.OldGuard => 3.5f,
+                // Cavalry — expensive
+                UnitType.MilitiaCavalry => 1.5f,
+                UnitType.Dragoon or UnitType.Cavalry => 2f,
+                UnitType.Hussar or UnitType.Lancer => 2.5f,
+                UnitType.Cuirassier => 3f,
+                UnitType.GuardCavalry => 3.5f,
+                UnitType.Mameluke => 4.5f,
+                // Artillery — most expensive per man
+                UnitType.GarrisonCannon => 2f,
+                UnitType.Artillery => 3f,
+                UnitType.HorseArtillery => 3.5f,
+                UnitType.Howitzer => 4f,
+                UnitType.GrandBattery => 4f,
+                UnitType.GuardArtillery => 5f,
+                // Special
+                UnitType.Engineer or UnitType.Sapper => 2f,
+                UnitType.Marine => 1.5f,
+                UnitType.Partisan => 0.3f,
+                _ => 1f
+            };
         }
 
         // === RANK METHODS ===
@@ -317,18 +489,7 @@ namespace NapoleonicWars.Campaign
         /// <summary>Recalculate maintenance cost based on current unit type and size.</summary>  
         public void RecalculateMaintenance()
         {
-            float costPerSoldier = unitType switch
-            {
-                UnitType.LineInfantry or UnitType.LightInfantry => 1f,
-                UnitType.Grenadier => 1.5f,
-                UnitType.Cavalry or UnitType.Hussar or UnitType.Lancer => 2f,
-                UnitType.Artillery => 3f,
-                UnitType.ImperialGuard => 2.5f,
-                UnitType.GuardCavalry => 3.5f,
-                UnitType.GuardArtillery => 4f,
-                _ => 1f
-            };
-            maintenanceCostPerTurn = currentSize * costPerSoldier;
+            maintenanceCostPerTurn = currentSize * GetMaintenancePerSoldier(unitType);
         }
 
         /// <summary>Get display rank name.</summary>

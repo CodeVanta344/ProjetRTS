@@ -227,7 +227,7 @@ namespace NapoleonicWars.UI
                     case UnitType.LineInfantry: case UnitType.LightInfantry: case UnitType.Grenadier: inf++; break;
                     case UnitType.Cavalry: case UnitType.Hussar: case UnitType.Lancer: cav++; break;
                     case UnitType.Artillery: art++; break;
-                    case UnitType.ImperialGuard: case UnitType.GuardCavalry: case UnitType.GuardArtillery: elite++; break;
+                    case UnitType.GuardInfantry: case UnitType.GuardCavalry: case UnitType.GuardArtillery: elite++; break;
                 }
             }
             string compStr = $"<color=#8AB4F8>⚔{inf}</color>  <color=#81C784>🐎{cav}</color>  <color=#FFB74D>💥{art}</color>";
@@ -511,37 +511,57 @@ namespace NapoleonicWars.UI
             piRT.anchorMin = Vector2.zero; piRT.anchorMax = Vector2.one;
             piRT.offsetMin = Vector2.zero; piRT.offsetMax = Vector2.zero;
 
-            // Name + Level
-            Text nameText = UIFactory.CreateText(inner, "Name", $"{gen.FullName}  •  Niv. {gen.level}", 14, TextAnchor.UpperLeft, UIFactory.GoldAccent);
+            // Name + Level (top)
+            string levelStars = new string('★', Mathf.Min(gen.level, 5));
+            Text nameText = UIFactory.CreateText(inner, "Name", $"{gen.FullName}   {levelStars}", 14, TextAnchor.UpperLeft, UIFactory.GoldAccent);
             nameText.fontStyle = FontStyle.Bold;
-            SetRect(nameText, 0.09f, 0.78f, 0.62f, 0.96f, 5);
+            SetRect(nameText, 0.09f, 0.80f, 0.62f, 0.96f, 5);
 
-            // Stats with colored values
-            string statsStr = $"CMD: <color=#E8D090>{gen.command}</color>  AUT: <color=#E8D090>{gen.authority}</color>  CHA: <color=#E8D090>{gen.charisma}</color>  INT: <color=#E8D090>{gen.intelligence}</color>";
-            Text statsText = UIFactory.CreateText(inner, "Stats", statsStr, 11, TextAnchor.UpperLeft, StatLabelColor);
+            // Small stats line: CMD/AUT/CHA/INT as compact labels
+            string statsStr = $"<color=#A08060>CMD</color> <color=#E8D090>{gen.command}</color>   " +
+                              $"<color=#A08060>AUT</color> <color=#E8D090>{gen.authority}</color>   " +
+                              $"<color=#A08060>CHA</color> <color=#E8D090>{gen.charisma}</color>   " +
+                              $"<color=#A08060>INT</color> <color=#E8D090>{gen.intelligence}</color>";
+            Text statsText = UIFactory.CreateText(inner, "Stats", statsStr, 10, TextAnchor.UpperLeft, StatLabelColor);
             statsText.supportRichText = true;
-            SetRect(statsText, 0.09f, 0.56f, 0.62f, 0.78f, 5);
+            SetRect(statsText, 0.09f, 0.64f, 0.62f, 0.80f, 5);
 
-            // Bonuses
-            string bonusStr = $"<color=#81C784>Atk +{gen.GetAttackBonus() * 100:F0}%</color>  <color=#64B5F6>Def +{gen.GetDefenseBonus() * 100:F0}%</color>  <color=#FFB74D>Moral +{gen.GetMoraleBonus():F0}</color>";
-            Text bonusText = UIFactory.CreateText(inner, "Bonus", bonusStr, 10, TextAnchor.UpperLeft, Color.white);
-            bonusText.supportRichText = true;
-            SetRect(bonusText, 0.09f, 0.36f, 0.62f, 0.56f, 5);
-
-            // Traits
+            // ═══ TRAIT BADGES (the star of the show) ═══
+            // Build trait string with colored badges
+            string traitDisplay = "";
             if (gen.traits.Count > 0)
             {
-                List<string> traitNames = new List<string>();
-                foreach (var t in gen.traits) traitNames.Add(t.name);
-                Text traitText = UIFactory.CreateText(inner, "Traits", "Traits: " + string.Join(", ", traitNames), 10, TextAnchor.UpperLeft, new Color(0.90f, 0.80f, 0.50f));
-                SetRect(traitText, 0.09f, 0.14f, 0.62f, 0.36f, 5);
+                List<string> badges = new List<string>();
+                foreach (var trait in gen.traits)
+                {
+                    string color = trait.isPositive ? "#81C784" : "#EF5350";
+                    string icon = trait.isPositive ? "✦" : "✧";
+                    badges.Add($"<color={color}>{icon} {trait.name}</color>");
+                }
+                traitDisplay = string.Join("   ", badges);
+            }
+            else
+            {
+                traitDisplay = "<color=#666655>Aucun trait</color>";
             }
 
-            // XP bar
+            Text traitText = UIFactory.CreateText(inner, "Traits", traitDisplay, 11, TextAnchor.UpperLeft, Color.white);
+            traitText.supportRichText = true;
+            traitText.fontStyle = FontStyle.Bold;
+            SetRect(traitText, 0.09f, 0.38f, 0.62f, 0.62f, 5);
+
+            // XP compact bar
             int expNext = gen.level < 10 ? (gen.level + 1) * (gen.level + 1) * 100 : 999;
             float xpPct = expNext > 0 ? Mathf.Clamp01((float)gen.experience / expNext) : 1f;
-            Text xpText = UIFactory.CreateText(inner, "XP", $"XP: {gen.experience}/{expNext}", 9, TextAnchor.UpperLeft, StatLabelColor);
-            SetRect(xpText, 0.09f, 0.02f, 0.35f, 0.16f, 5);
+            Text xpText = UIFactory.CreateText(inner, "XP", $"XP {gen.experience}/{expNext}", 9, TextAnchor.UpperLeft, StatLabelColor);
+            SetRect(xpText, 0.09f, 0.12f, 0.35f, 0.28f, 5);
+
+            // Unlocked skills count
+            if (gen.unlockedSkills.Count > 0)
+            {
+                Text skillsText = UIFactory.CreateText(inner, "Skills", $"🎓 {gen.unlockedSkills.Count} compétences", 9, TextAnchor.UpperLeft, new Color(0.6f, 0.8f, 0.9f));
+                SetRect(skillsText, 0.09f, 0.00f, 0.35f, 0.14f, 5);
+            }
 
             // Right side: assignment
             if (isAssigned)
