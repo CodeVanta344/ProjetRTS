@@ -147,26 +147,70 @@ namespace NapoleonicWars.Units
                 cachedTotalAmmo = totalAmmo;
             }
             
-            // DO NOT slerp the parent rotation while units are moving!
-            // Units are children of this transform. Rotating the parent DRAGS all units,
-            // conflicting with their individual world-space MoveTo targets.
-            // This was the cause of teleportation and front/back rank swapping.
+            // Rigid Body Formation Movement
             if (isRegimentMoving)
             {
-                // Check if most units have arrived at their targets
-                List<UnitBase> alive = GetAliveUnits();
-                int arrived = 0;
-                for (int i = 0; i < alive.Count; i++)
-                {
-                    if (alive[i].CurrentState == UnitState.Idle || alive[i].CurrentState == UnitState.Attacking)
-                        arrived++;
-                }
+                // Advance center toward destination
+                float distToTarget = Vector3.Distance(currentRegimentPosition, targetRegimentPosition);
                 
-                // Once most units arrive, stop the movement flag
-                if (arrived >= alive.Count * 0.8f || alive.Count == 0)
+                if (distToTarget < 0.1f && Quaternion.Angle(currentRegimentRotation, targetRegimentRotation) < 1f)
                 {
+                    // Arrived
+                    currentRegimentPosition = targetRegimentPosition;
+                    currentRegimentRotation = targetRegimentRotation;
                     isRegimentMoving = false;
                     hasMoveOrder = false;
+                }
+                else
+                {
+                    // Move position
+                    if (distToTarget > 0.01f)
+                    {
+                        currentRegimentPosition = Vector3.MoveTowards(
+                            currentRegimentPosition, 
+                            targetRegimentPosition, 
+                            regimentMoveSpeed * Time.deltaTime
+                        );
+                        currentRegimentPosition.y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(currentRegimentPosition);
+                    }
+                    
+                    // Rotate facing
+                    currentRegimentRotation = Quaternion.RotateTowards(
+                        currentRegimentRotation, 
+                        targetRegimentRotation, 
+                        30f * Time.deltaTime // Turn rate in degrees per second
+                    );
+                }
+                
+                // Recalculate slots based on the sliding center/rotation and push to units
+                List<UnitBase> aliveUnits = GetAliveUnits();
+                int n = aliveUnits.Count;
+                if (n > 0)
+                {
+                    Vector3[] localFormation = GetFormationPositions(n);
+                    for (int i = 0; i < n; i++)
+                    {
+                        if (!pooledSlotUsed[i]) continue;
+                        
+                        UnitBase assignedUnit = aliveUnits[pooledSlotAssignment[i]];
+                        if (assignedUnit == null || assignedUnit.CurrentState == UnitState.Dead) continue;
+
+                        Vector3 worldPos = currentRegimentPosition + (currentRegimentRotation * localFormation[i]);
+                        worldPos.y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(worldPos);
+                        
+                        // Push dynamic target strictly to the unit
+                        assignedUnit.UpdateFormationTarget(worldPos, regimentMoveSpeed);
+                        
+                        // If we are stationary but just finishing rotation
+                        if (!isRegimentMoving && Vector3.Distance(assignedUnit.transform.position, worldPos) < 0.2f)
+                        {
+                            assignedUnit.transform.rotation = Quaternion.RotateTowards(
+                                assignedUnit.transform.rotation, 
+                                currentRegimentRotation, 
+                                90f * Time.deltaTime
+                            );
+                        }
+                    }
                 }
             }
             
@@ -309,6 +353,10 @@ namespace NapoleonicWars.Units
             // Skip if already in this formation - prevents unnecessary repositioning
             if (currentFormation == formation) return;
             
+            // Cancel any ongoing regiment march so units can freely reorganize
+            isRegimentMoving = false;
+            hasMoveOrder = false;
+            
             currentFormation = formation;
 
             // Square formation gives anti-cavalry bonus via morale
@@ -357,8 +405,9 @@ namespace NapoleonicWars.Units
         public void SetRankCount(int ranks)
         {
             desiredRanks = Mathf.Clamp(ranks, 0, 20); // 0 = auto
-            // NOTE: Do NOT call ApplyFormation here - MoveRegiment will handle the actual movement
-            // Calling ApplyFormation during line extension preview sends units backward
+            // NOTE: Do NOT call ApplyFormation here - it is used during line extension preview
+            // where MoveRegiment handles the actual movement on mouse release.
+            // For standalone rank changes (PageUp/Down), the caller should call ApplyFormation.
         }
 
         /// <summary>
@@ -580,44 +629,39 @@ namespace NapoleonicWars.Units
 
         public void ApplyFormation(bool instant = false)
         {
+            // Cancel any ongoing regiment march
+            isRegimentMoving = false;
+            hasMoveOrder = false;
+            
             List<UnitBase> aliveUnits = GetAliveUnits();
             if (aliveUnits.Count == 0) return;
 
-            // Only teleport instantly when explicitly requested (e.g., initial unit creation)
-            // Never teleport during gameplay - always use smooth movement
-            bool useInstant = instant;
-
-            Vector3[] positions = GetFormationPositions(aliveUnits.Count);
-            
-            // Compute world positions
             int n = aliveUnits.Count;
-            if (pooledFormationWorldPos == null || pooledFormationWorldPos.Length < n)
-                pooledFormationWorldPos = new Vector3[n * 2];
-            for (int i = 0; i < n; i++)
+            Vector3[] positions = GetFormationPositions(n);
+            
+            // Re-center physical tracking around the regiment
+            if (!isRegimentMoving && currentRegimentPosition == Vector3.zero)
             {
-                pooledFormationWorldPos[i] = transform.TransformPoint(positions[i]);
-                pooledFormationWorldPos[i].y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(pooledFormationWorldPos[i]);
+                currentRegimentPosition = transform.position;
+                currentRegimentRotation = transform.rotation;
             }
             
-            // Assign units to nearest slots to prevent them from crossing paths
-            AssignUnitsToNearestSlots(aliveUnits, pooledFormationWorldPos, n);
-
+            AssignUnitsToNearestSlots(aliveUnits, positions, n);
             for (int i = 0; i < n; i++)
             {
-                Vector3 worldPos = pooledFormationWorldPos[i];
                 int unitIdx = pooledSlotAssignment[i];
+                UnitBase assignedUnit = aliveUnits[unitIdx];
                 
-                if (useInstant)
+                Vector3 worldPos = currentRegimentPosition + (currentRegimentRotation * positions[i]);
+                worldPos.y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(worldPos);
+                
+                if (instant)
                 {
-                    // Instant teleport - only for initial creation, never during gameplay
-                    aliveUnits[unitIdx].transform.position = worldPos;
-                    aliveUnits[unitIdx].MoveTo(worldPos);
+                    assignedUnit.transform.position = worldPos;
+                    assignedUnit.transform.rotation = currentRegimentRotation;
                 }
-                else
-                {
-                    // Smooth movement - units will walk to formation position
-                    aliveUnits[unitIdx].MoveTo(worldPos);
-                }
+                
+                assignedUnit.UpdateFormationTarget(worldPos, 0f);
             }
         }
 
@@ -706,64 +750,63 @@ namespace NapoleonicWars.Units
             // CENTER the formation around origin for standard MoveRegiment(dest)
             // Line-extension MoveRegiment(dest, angle) handles left-anchoring separately
             float startX = -(cols - 1) * unitSpacing * 0.5f;
-            float startZ = -(rows - 1) * rowSpacing * 0.5f;
+            // Z starts positive (front) and decreases for each back row
+            float startZ = (rows - 1) * rowSpacing * 0.5f;
 
             for (int row = 0; row < rows && index < count; row++)
             {
-                for (int col = 0; col < cols && index < count; col++)
+                // Center incomplete rows (last row with fewer units)
+                int unitsThisRow = Mathf.Min(cols, count - index);
+                float rowCenterOffset = (cols - unitsThisRow) * unitSpacing * 0.5f;
+                
+                for (int col = 0; col < unitsThisRow; col++)
                 {
-                    pooledFormationPositions[index].x = startX + col * unitSpacing;
+                    pooledFormationPositions[index].x = startX + rowCenterOffset + col * unitSpacing;
                     pooledFormationPositions[index].y = 0f;
-                    pooledFormationPositions[index].z = startZ + row * rowSpacing;
+                    pooledFormationPositions[index].z = startZ - row * rowSpacing;
                     index++;
                 }
             }
         }
 
-        /// <summary>
-        /// Greedy nearest-slot assignment: for each formation slot, find the closest 
-        /// unassigned soldier. Result is stored in pooledSlotAssignment[slotIndex] = unitIndex.
-        /// This prevents soldiers from crossing over each other when reforming.
-        /// </summary>
+        private void AssignUnitsToFormation(List<UnitBase> aliveUnits, Vector3[] worldSlots, int count, Vector3 formationForward)
+        {
+            AssignUnitsToNearestSlots(aliveUnits, worldSlots, count);
+        }
+
         private void AssignUnitsToNearestSlots(List<UnitBase> aliveUnits, Vector3[] worldSlots, int count)
         {
-            // Ensure pooled arrays are big enough
             if (pooledSlotAssignment.Length < count)
             {
                 pooledSlotAssignment = new int[count * 2];
                 pooledSlotUsed = new bool[count * 2];
             }
-            
-            // Reset used flags
-            for (int i = 0; i < count; i++)
-                pooledSlotUsed[i] = false;
 
-            // For each slot, find the closest unassigned unit
+            for (int i = 0; i < count; i++) pooledSlotUsed[i] = false;
+
+            // Simple greedy distance assignment
             for (int slot = 0; slot < count; slot++)
             {
-                float bestDistSqr = float.MaxValue;
                 int bestUnit = -1;
-                Vector3 slotPos = worldSlots[slot];
+                float bestDistSq = float.MaxValue;
 
                 for (int u = 0; u < count; u++)
                 {
                     if (pooledSlotUsed[u]) continue;
-                    
-                    Vector3 unitPos = aliveUnits[u].transform.position;
-                    float dx = unitPos.x - slotPos.x;
-                    float dz = unitPos.z - slotPos.z;
-                    float distSqr = dx * dx + dz * dz;
-                    
-                    if (distSqr < bestDistSqr)
+
+                    float distSq = (worldSlots[slot] - aliveUnits[u].transform.position).sqrMagnitude;
+                    if (distSq < bestDistSq)
                     {
-                        bestDistSqr = distSqr;
+                        bestDistSq = distSq;
                         bestUnit = u;
                     }
                 }
 
-                pooledSlotAssignment[slot] = bestUnit >= 0 ? bestUnit : slot;
                 if (bestUnit >= 0)
+                {
+                    pooledSlotAssignment[slot] = bestUnit;
                     pooledSlotUsed[bestUnit] = true;
+                }
             }
         }
 
@@ -995,19 +1038,47 @@ namespace NapoleonicWars.Units
         }
 
 
-        private Vector3 currentDestination;
+        // Smooth regiment movement — Rigid Body Formation
+        private Vector3 currentRegimentPosition;
+        private Quaternion currentRegimentRotation = Quaternion.identity;
+        private Vector3 targetRegimentPosition;
+        private Quaternion targetRegimentRotation = Quaternion.identity;
+        private bool isRegimentMoving = false;
+        
+        // Cooldowns
+        private Vector3 rawMoveDestination;
         private bool hasMoveOrder = false;
-        private float moveCooldown = 0f; // Prevents AI from re-issuing moves too rapidly
+        private float moveCooldown = 0f;
         private const float MOVE_COOLDOWN_TIME = 1.0f;
 
-        // Smooth regiment movement — prevents teleportation
-        private Vector3 targetRegimentPosition;
-        private Quaternion targetRegimentFacing = Quaternion.identity;
-        private bool isRegimentMoving = false;
+        // Synchronized move speed
+        private float regimentMoveSpeed = 0f;
+        public float RegimentMoveSpeed => regimentMoveSpeed;
+        public bool IsRegimentMoving => isRegimentMoving;
+
+        /// <summary>
+        /// Absolute Rank Preservation:
+        /// Identity mapping ensures that Soldier i always goes to Slot i.
+        /// Because slots are mathematically generated Front-to-Back, Left-to-Right,
+        /// this guarantees the hierarchy is never broken.
+        /// </summary>
+        private void AssignUnitsToFormation(int count)
+        {
+            if (pooledSlotAssignment.Length < count)
+            {
+                pooledSlotAssignment = new int[count * 2];
+                pooledSlotUsed = new bool[count * 2];
+            }
+            
+            for (int i = 0; i < count; i++)
+            {
+                pooledSlotAssignment[i] = i;
+                pooledSlotUsed[i] = true;
+            }
+        }
 
         public void MoveRegiment(Vector3 destination)
         {
-            // Get terrain height at destination
             destination.y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(destination);
             
             List<UnitBase> aliveUnits = GetAliveUnits();
@@ -1017,135 +1088,185 @@ namespace NapoleonicWars.Units
             if (moveCooldown > 0f)
             {
                 moveCooldown -= Time.deltaTime;
-                // During cooldown, only allow if destination is VERY different (>20 units)
-                if ((destination - currentDestination).sqrMagnitude < 400f)
+                Vector3 cooldownDiff = destination - rawMoveDestination;
+                cooldownDiff.y = 0f;
+                if (cooldownDiff.sqrMagnitude < 400f)
                     return;
             }
             
-            // === JITTER CHECK: Scale threshold by unit speed ===
+            // === JITTER CHECK ===
             float jitterThreshold = unitData != null ? Mathf.Max(5.0f, unitData.moveSpeed * 1.2f) : 5.0f;
-            if (hasMoveOrder && (destination - currentDestination).sqrMagnitude < jitterThreshold * jitterThreshold)
-            {
+            Vector3 jitterDiff = destination - rawMoveDestination;
+            jitterDiff.y = 0f;
+            if (hasMoveOrder && jitterDiff.sqrMagnitude < jitterThreshold * jitterThreshold)
                 return;
+            
+            int n = aliveUnits.Count;
+            
+            // Calculate current physical center if not moving
+            if (!isRegimentMoving)
+            {
+                currentRegimentPosition = Vector3.zero;
+                for (int i = 0; i < n; i++)
+                    currentRegimentPosition += aliveUnits[i].transform.position;
+                currentRegimentPosition /= n;
+                currentRegimentPosition.y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(currentRegimentPosition);
+                
+                currentRegimentRotation = Quaternion.LookRotation(FacingDirection.sqrMagnitude > 0.01f ? FacingDirection : Vector3.forward);
             }
             
-            // Calculate direction from current position to destination
-            Vector3 moveDirection = destination - transform.position;
+            Vector3 moveDirection = destination - currentRegimentPosition;
             moveDirection.y = 0f;
             
-            // Smooth regiment facing direction
             if (moveDirection.sqrMagnitude > 1f)
             {
-                targetRegimentFacing = Quaternion.LookRotation(moveDirection.normalized);
+                targetRegimentRotation = Quaternion.LookRotation(moveDirection.normalized);
                 FacingDirection = moveDirection.normalized;
             }
-            
-            // Compute the facing rotation for formation layout
-            Quaternion formationRotation = targetRegimentFacing != Quaternion.identity 
-                ? targetRegimentFacing 
-                : transform.rotation;
-            
-            // Get formation positions (local positions centered around 0,0,0)
-            Vector3[] formationPositions = GetFormationPositions(aliveUnits.Count);
-            
-            // Compute WORLD positions for each slot relative to DESTINATION
-            // DO NOT move the parent — compute everything in world space
-            int n = aliveUnits.Count;
-            if (pooledFormationWorldPos == null || pooledFormationWorldPos.Length < n)
-                pooledFormationWorldPos = new Vector3[n * 2];
-            for (int i = 0; i < n; i++)
+            else
             {
-                Vector3 rotatedOffset = formationRotation * formationPositions[i];
-                pooledFormationWorldPos[i] = destination + rotatedOffset;
-                pooledFormationWorldPos[i].y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(pooledFormationWorldPos[i]);
+                targetRegimentRotation = currentRegimentRotation;
             }
             
-            // Assign each unit to nearest available slot (prevents crossing paths)
-            AssignUnitsToNearestSlots(aliveUnits, pooledFormationWorldPos, n);
+            // Re-assign units strictly to grid slots
+            AssignUnitsToFormation(n);
             
-            // DO NOT snap the parent transform — this was causing teleportation!
-            // Units will walk to their world-space targets naturally via MoveTo.
-            // Parent position stays unchanged; facing rotation slerps in Update.
+            // Define destination
+            targetRegimentPosition = destination;
             
+            // Speed = slowest unit
+            regimentMoveSpeed = float.MaxValue;
             for (int i = 0; i < n; i++)
             {
-                aliveUnits[pooledSlotAssignment[i]].MoveTo(pooledFormationWorldPos[i]);
+                float spd = aliveUnits[i].GetEffectiveMoveSpeed();
+                if (spd < regimentMoveSpeed) regimentMoveSpeed = spd;
             }
+            if (regimentMoveSpeed >= float.MaxValue) regimentMoveSpeed = 3.5f;
+            if (regimentMoveSpeed < 1f) regimentMoveSpeed = 1f;
             
-            currentDestination = destination;
+            rawMoveDestination = destination;
             hasMoveOrder = true;
             moveCooldown = MOVE_COOLDOWN_TIME;
             isRegimentMoving = true;
         }
 
-        /// <summary>
-        /// Move regiment to destination with a specific facing angle (in degrees).
-        /// Used for line extension feature where user drags to define line width and facing.
-        /// ANCHORED AT LEFT: destination is position of leftmost unit, formation extends to the right.
-        /// </summary>
         public void MoveRegiment(Vector3 destination, float facingAngle)
         {
-            // Get terrain height at destination
             destination.y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(destination);
             
             List<UnitBase> aliveUnits = GetAliveUnits();
             if (aliveUnits.Count == 0) return;
             
-            // Set target regiment facing direction from angle
-            targetRegimentFacing = Quaternion.Euler(0f, facingAngle, 0f);
-            FacingDirection = targetRegimentFacing * Vector3.forward;
+            targetRegimentRotation = Quaternion.Euler(0f, facingAngle, 0f);
+            FacingDirection = targetRegimentRotation * Vector3.forward;
             
-            // Use the target facing for computing formation layout
-            Quaternion rotation = targetRegimentFacing;
-            int unitCount = aliveUnits.Count;
-            int rows = ComputeEffectiveRanks(unitCount);
-            int unitsPerRank = Mathf.CeilToInt((float)unitCount / rows);
+            int n = aliveUnits.Count;
             
-            // Avoid tiny last rank: if last row has less than 40% of full row, reduce rows
-            int lastRowCount = unitCount - (rows - 1) * unitsPerRank;
+            if (!isRegimentMoving)
+            {
+                currentRegimentPosition = Vector3.zero;
+                for (int i = 0; i < n; i++)
+                    currentRegimentPosition += aliveUnits[i].transform.position;
+                currentRegimentPosition /= n;
+                currentRegimentPosition.y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(currentRegimentPosition);
+                
+                currentRegimentRotation = targetRegimentRotation; // Snap rotation if stationary
+            }
+            
+            AssignUnitsToFormation(n);
+            
+            // Compute destination centroid from the pre-calculated left-anchor geometry
+            // The destination passed in is the left edge. We need the logic to find the true centroid.
+            int rows = ComputeEffectiveRanks(n);
+            int unitsPerRank = Mathf.CeilToInt((float)n / rows);
+            int lastRowCount = n - (rows - 1) * unitsPerRank;
             if (rows > 1 && lastRowCount > 0 && lastRowCount < unitsPerRank * 0.4f)
             {
                 rows = Mathf.Max(1, rows - 1);
-                unitsPerRank = Mathf.CeilToInt((float)unitCount / rows);
+                unitsPerRank = Mathf.CeilToInt((float)n / rows);
             }
             
-            // Build all WORLD positions (relative to destination, not parent)
-            if (pooledFormationWorldPos == null || pooledFormationWorldPos.Length < unitCount)
-                pooledFormationWorldPos = new Vector3[unitCount * 2];
-            
+            Vector3 centroid = Vector3.zero;
             int index = 0;
-            for (int row = 0; row < rows && index < unitCount; row++)
+            for (int row = 0; row < rows && index < n; row++)
             {
-                int unitsThisRow = Mathf.Min(unitsPerRank, unitCount - index);
+                int unitsThisRow = Mathf.Min(unitsPerRank, n - index);
                 float rowOffsetX = (unitsPerRank - unitsThisRow) * unitSpacing * 0.5f;
                 
                 for (int col = 0; col < unitsThisRow; col++)
                 {
-                    // Row 0 = front rank (at destination), deeper rows go BEHIND
-                    Vector3 localPos = new Vector3(
-                        rowOffsetX + col * unitSpacing,
-                        0f,
-                        -row * rowSpacing
-                    );
-                    Vector3 rotatedOffset = rotation * localPos;
-                    pooledFormationWorldPos[index] = destination + rotatedOffset;
-                    pooledFormationWorldPos[index].y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(pooledFormationWorldPos[index]);
+                    Vector3 localPos = new Vector3(rowOffsetX + col * unitSpacing, 0f, -row * rowSpacing);
+                    Vector3 rotatedOffset = targetRegimentRotation * localPos;
+                    centroid += destination + rotatedOffset;
                     index++;
                 }
             }
+            centroid /= n;
+            centroid.y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(centroid);
             
-            // Assign units to nearest slots
-            AssignUnitsToNearestSlots(aliveUnits, pooledFormationWorldPos, unitCount);
+            targetRegimentPosition = centroid;
             
-            // DO NOT snap parent transform — let units walk to their world-space targets
-            for (int i = 0; i < unitCount; i++)
+            regimentMoveSpeed = float.MaxValue;
+            for (int i = 0; i < n; i++)
             {
-                aliveUnits[pooledSlotAssignment[i]].MoveTo(pooledFormationWorldPos[i]);
+                float spd = aliveUnits[i].GetEffectiveMoveSpeed();
+                if (spd < regimentMoveSpeed) regimentMoveSpeed = spd;
+            }
+            if (regimentMoveSpeed >= float.MaxValue) regimentMoveSpeed = 3.5f;
+            if (regimentMoveSpeed < 1f) regimentMoveSpeed = 1f;
+            
+            rawMoveDestination = destination;
+            hasMoveOrder = true;
+            isRegimentMoving = true;
+        }
+
+        public void MoveRegiment(Vector3 destination, float facingAngle, Vector3[] precomputedWorldPositions)
+        {
+            destination.y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(destination);
+            
+            List<UnitBase> aliveUnits = GetAliveUnits();
+            if (aliveUnits.Count == 0) return;
+            
+            targetRegimentRotation = Quaternion.Euler(0f, facingAngle, 0f);
+            FacingDirection = targetRegimentRotation * Vector3.forward;
+            
+            int n = Mathf.Min(aliveUnits.Count, precomputedWorldPositions.Length);
+            
+            if (!isRegimentMoving)
+            {
+                currentRegimentPosition = Vector3.zero;
+                for (int i = 0; i < n; i++)
+                    currentRegimentPosition += aliveUnits[i].transform.position;
+                currentRegimentPosition /= n;
+                currentRegimentPosition.y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(currentRegimentPosition);
+                
+                currentRegimentRotation = targetRegimentRotation;
             }
             
-            currentDestination = destination;
+            AssignUnitsToFormation(n);
+            
+            Vector3 centroid = Vector3.zero;
+            for (int i = 0; i < n; i++)
+            {
+                centroid += precomputedWorldPositions[i];
+            }
+            centroid /= n;
+            centroid.y = NapoleonicWars.Core.BattleManager.GetTerrainHeight(centroid);
+            
+            targetRegimentPosition = centroid;
+            
+            regimentMoveSpeed = float.MaxValue;
+            for (int i = 0; i < n; i++)
+            {
+                float spd = aliveUnits[i].GetEffectiveMoveSpeed();
+                if (spd < regimentMoveSpeed) regimentMoveSpeed = spd;
+            }
+            if (regimentMoveSpeed >= float.MaxValue) regimentMoveSpeed = 3.5f;
+            if (regimentMoveSpeed < 1f) regimentMoveSpeed = 1f;
+            
+            rawMoveDestination = destination;
             hasMoveOrder = true;
-            isRegimentMoving = true; // Facing will slerp in Update
+            isRegimentMoving = true;
         }
 
         public void RotateRegiment(Vector3 lookDirection)

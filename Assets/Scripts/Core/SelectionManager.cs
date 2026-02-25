@@ -21,13 +21,7 @@ namespace NapoleonicWars.Core
         private Vector2 dragStartScreen;
         private Rect selectionRect;
 
-        // Line extension (right-click drag to space out formation)
-        private bool isExtendingLine = false;
-        public bool IsExtendingLine => isExtendingLine;
-        private bool isInFormationMode = false;
-        private Vector3 lineExtendStartPos;
-        private Regiment lineExtendingRegiment;
-        private float originalUnitSpacing;
+        // Line extension logic removed as per user request
 
         public List<Regiment> SelectedRegiments => selectedRegiments;
         public List<UnitBase> SelectedUnits => selectedUnits;
@@ -104,11 +98,7 @@ namespace NapoleonicWars.Core
             HandleSelection();
             HandleCommands();
             HandleFormationHotkeys();
-            // Cancel formation mode with Escape
-            if (Input.GetKeyDown(KeyCode.Escape) && isInFormationMode)
-            {
-                CancelFormationMode();
-            }
+            HandleFormationHotkeys();
         }
 
         private void HandleSelection()
@@ -240,13 +230,11 @@ namespace NapoleonicWars.Core
             // Check if we're in deployment phase
             bool isDeployment = BattleManager.Instance != null && BattleManager.Instance.IsDeploymentPhase;
 
-            // Handle line extension (right-click drag) - works in both deployment and battle
-            HandleLineExtension();
 
-            // Don't process normal commands while extending line
-            if (isExtendingLine) return;
-            
-            if (InputManager.Instance.CommandIssued)
+            // Issue commands on right-click RELEASE (not down) so units don't move
+            // until the player has finished aiming. Short clicks (no line extension)
+            // fall through here on GetMouseButtonUp.
+            if (Input.GetMouseButtonUp(1))
             {
                 if (mainCamera == null) return;
 
@@ -308,191 +296,7 @@ namespace NapoleonicWars.Core
             }
         }
 
-        // Cached values for line extension preview
-        private float previewSpacing;
-        private float previewFacingAngle;
-        private Vector3 previewDestination;
-
-        /// <summary>
-        /// Handle line extension: right-click and drag to define line width and facing
-        /// Like Total War games - drag to set destination, facing direction, and line width
-        /// Shows a preview without moving soldiers until confirmed.
-        /// </summary>
-        private void HandleLineExtension()
-        {
-            if (selectedRegiments.Count == 0) return;
-            
-            // Start line extension on right-click down
-            if (Input.GetMouseButtonDown(1))
-            {
-                isExtendingLine = true;
-                lineExtendStartPos = InputManager.Instance.MouseWorldPosition;
-                lineExtendingRegiment = selectedRegiments[0];
-                originalUnitSpacing = lineExtendingRegiment.UnitSpacing;
-                Debug.Log($"[LineExt] START - Regiment: {lineExtendingRegiment.RegimentName}, Current spacing: {originalUnitSpacing}");
-            }
-
-            // While holding right-click, show preview WITHOUT moving soldiers
-            if (isExtendingLine && Input.GetMouseButton(1))
-            {
-                Vector3 currentPos = InputManager.Instance.MouseWorldPosition;
-                Vector3 dragVector = currentPos - lineExtendStartPos;
-                float dragDistance = dragVector.magnitude;
-
-                Debug.Log($"[LineExt] HOLD - Drag distance: {dragDistance:F2}");
-
-                if (dragDistance > 2f)
-                {
-                    // Get ACTUAL alive unit count first
-                    var aliveUnits = lineExtendingRegiment.GetAliveUnits();
-                    int unitCount = aliveUnits.Count;
-                    if (unitCount <= 0) return;
-                    
-                    // Proportional ranks: how many soldiers fit in the front rank
-                    // based on drag width and a comfortable spacing (1.2 - 1.5m)
-                    float idealSpacing = 1.3f; // shoulder-to-shoulder Napoleonic spacing
-                    int unitsPerRank = Mathf.Clamp(Mathf.FloorToInt(dragDistance / idealSpacing) + 1, 1, unitCount);
-                    int effectiveRanks = Mathf.CeilToInt((float)unitCount / unitsPerRank);
-                    effectiveRanks = Mathf.Max(1, effectiveRanks);
-                    
-                    // Recalculate actual spacing to fill the drag width evenly
-                    previewSpacing = unitsPerRank > 1 
-                        ? dragDistance / (unitsPerRank - 1) 
-                        : idealSpacing;
-                    previewSpacing = Mathf.Clamp(previewSpacing, 0.8f, 5f);
-                    
-                    // Apply rank count
-                    lineExtendingRegiment.SetRankCount(effectiveRanks);
-                    
-                    Debug.Log($"[LineExt] STRETCH - Units: {unitCount}, Ranks: {effectiveRanks}, PerRank: {unitsPerRank}, Spacing: {previewSpacing:F2}");
-                    
-                    // Apply the new spacing BEFORE changing formation to avoid double movement
-                    lineExtendingRegiment.SetUnitSpacing(previewSpacing);
-                    
-                    // Force line formation type WITHOUT moving units (MoveRegiment will handle movement)
-                    if (lineExtendingRegiment.CurrentFormation != FormationType.Line)
-                    {
-                        lineExtendingRegiment.SetFormationTypeOnly(FormationType.Line);
-                    }
-                    
-                    // Calculate facing direction (perpendicular to drag direction)
-                    // The mouse position relative to the LINE determines which side troops face
-                    Vector3 lineDirection = dragVector.normalized;
-                    Vector3 perpendicular = Vector3.Cross(lineDirection, Vector3.up);
-                    
-                    // Determine facing: which side of the drag line is the regiment currently on?
-                    // Use the regiment center → midpoint of line, then check which side the center falls on
-                    Vector3 lineMidpoint = (lineExtendStartPos + currentPos) * 0.5f;
-                    Vector3 regimentCenter = lineExtendingRegiment.transform.position;
-                    Vector3 centerToMidpoint = lineMidpoint - regimentCenter;
-                    centerToMidpoint.y = 0f;
-                    
-                    // If regiment is "behind" the line (same side as perpendicular points), face the other way
-                    // This means troops always face AWAY from their current position toward the enemy side
-                    Vector3 facingDirection;
-                    if (Vector3.Dot(centerToMidpoint, perpendicular) > 0)
-                        facingDirection = perpendicular;
-                    else
-                        facingDirection = -perpendicular;
-                    
-                    previewFacingAngle = Mathf.Atan2(facingDirection.x, facingDirection.z) * Mathf.Rad2Deg;
-                    
-                    // ANCHOR AT LEFT: destination is at lineStart (left edge), not center
-                    // Line goes from left (lineStart) to right (lineEnd)
-                    Vector3 leftEdge = lineExtendStartPos;
-                    Vector3 rightEdge = currentPos;
-                    previewDestination = leftEdge; // Snap point is at LEFT edge
-                    
-                    // Calculate actual line width with clamped spacing
-                    float actualLineWidth = previewSpacing * (unitsPerRank - 1);
-                    
-                    // Calculate line endpoints for visual (from left to right of formation)
-                    Vector3 lineStart = leftEdge;
-                    Vector3 lineEnd = leftEdge + lineDirection * actualLineWidth;
-                    
-                    // Calculate preview positions - anchored at left
-                    // First unit at leftEdge, others extending to the right
-                    Vector3[] previewPositions = new Vector3[unitCount];
-                    Quaternion rotation = Quaternion.Euler(0f, previewFacingAngle, 0f);
-                    float rowSpacing = lineExtendingRegiment.RowSpacing;
-                    int rows = Mathf.Clamp(effectiveRanks, 1, 5);
-                    
-                    int index = 0;
-                    for (int row = 0; row < rows && index < unitCount; row++)
-                    {
-                        for (int col = 0; col < unitsPerRank && index < unitCount; col++)
-                        {
-                            // Local position: x goes right from left edge, z goes BACKWARD for rows
-                            // Row 0 = front rank (at the line), deeper rows go BEHIND
-                            Vector3 localPos = new Vector3(
-                                col * previewSpacing,
-                                0f,
-                                -row * rowSpacing
-                            );
-                            // Rotate and translate to world position
-                            previewPositions[index] = leftEdge + rotation * localPos;
-                            index++;
-                        }
-                    }
-                    
-                    // Show visual preview
-                    if (NapoleonicWars.UI.OrderFeedback.Instance != null)
-                    {
-                        NapoleonicWars.UI.OrderFeedback.Instance.ShowFormationPreview(
-                            previewPositions, lineStart, lineEnd, facingDirection);
-                    }
-                }
-                else
-                {
-                    // Clear preview if drag is too short
-                    if (NapoleonicWars.UI.OrderFeedback.Instance != null)
-                    {
-                        NapoleonicWars.UI.OrderFeedback.Instance.ClearFormationPreview();
-                    }
-                }
-            }
-
-            // Release right-click to confirm movement with new formation
-            if (isExtendingLine && Input.GetMouseButtonUp(1))
-            {
-                Debug.Log("[LineExt] RELEASE");
-                
-                // Clear preview
-                if (NapoleonicWars.UI.OrderFeedback.Instance != null)
-                {
-                    NapoleonicWars.UI.OrderFeedback.Instance.ClearFormationPreview();
-                }
-
-                Vector3 currentPos = InputManager.Instance.MouseWorldPosition;
-                Vector3 dragVector = currentPos - lineExtendStartPos;
-                float dragDistance = dragVector.magnitude;
-
-                Debug.Log($"[LineExt] Final drag distance: {dragDistance:F2}");
-
-                if (dragDistance > 2f)
-                {
-                    Debug.Log($"[LineExt] APPLY - Spacing already set to: {previewSpacing:F2}, Dest: {previewDestination}");
-                    
-                    // Spacing was already applied during preview phase
-                    // Just move regiment to destination with new facing
-                    lineExtendingRegiment.MoveRegiment(previewDestination, previewFacingAngle);
-                    
-                    // Visual feedback
-                    if (NapoleonicWars.UI.OrderFeedback.Instance != null)
-                    {
-                        NapoleonicWars.UI.OrderFeedback.Instance.ShowMoveMarker(previewDestination);
-                    }
-                }
-                else
-                {
-                    Debug.Log("[LineExt] Drag too short - will process as normal move");
-                }
-                // Short drag = let HandleCommands deal with it as a simple move
-
-                isExtendingLine = false;
-                lineExtendingRegiment = null;
-            }
-        }
+        // HandleLineExtension removed
 
         private void IssueMoveCommand(Vector3 destination)
         {
@@ -618,6 +422,7 @@ namespace NapoleonicWars.Core
                 {
                     int newRanks = regiment.CurrentRankCount + 1;
                     regiment.SetRankCount(newRanks);
+                    regiment.ApplyFormation(); // Apply immediately for standalone rank changes
                     Debug.Log($"[Formation] {regiment.RegimentName}: {newRanks} ranks");
                 }
             }
@@ -629,6 +434,7 @@ namespace NapoleonicWars.Core
                 {
                     int newRanks = regiment.CurrentRankCount - 1;
                     regiment.SetRankCount(newRanks);
+                    regiment.ApplyFormation(); // Apply immediately for standalone rank changes
                     Debug.Log($"[Formation] {regiment.RegimentName}: {newRanks} ranks");
                 }
             }
@@ -721,30 +527,7 @@ namespace NapoleonicWars.Core
             }
         }
 
-        /// <summary>
-        /// Cancel formation mode and reset formation changes
-        /// </summary>
-        private void CancelFormationMode()
-        {
-            if (isExtendingLine && lineExtendingRegiment != null)
-            {
-                // Reset to original spacing
-                lineExtendingRegiment.SetUnitSpacing(originalUnitSpacing);
-                lineExtendingRegiment.SetRankCount(0); // Reset to auto-calculated
-            }
-            
-            isExtendingLine = false;
-            isInFormationMode = false;
-            lineExtendingRegiment = null;
-            
-            // Clear any preview
-            if (NapoleonicWars.UI.OrderFeedback.Instance != null)
-            {
-                NapoleonicWars.UI.OrderFeedback.Instance.ClearFormationPreview();
-            }
-            
-            Debug.Log("[SelectionManager] Formation mode cancelled");
-        }
+        // CancelFormationMode removed
 
         private void LateUpdate()
         {

@@ -16,24 +16,9 @@ namespace NapoleonicWars.UI
         private Text titleText;
         private Text enemyCountText;
 
-        // Selection panel
-        private GameObject selectionPanel;
-        private Text selectionHeaderText;
-        private Text unitsAliveText;
-        private Text unitTypeText;
-        private Text formationText;
-        private Image moraleFill;
-        private Image moraleBg;
-        private Image staminaFill;
-        private Image staminaBg;
-        private Text ammoText;
-        private Text experienceText;
-        private Text officerText;
+        // Selection panel removed
 
-        // Formation buttons
-        private GameObject formationPanel;
-        private Button btnLine, btnColumn, btnSquare, btnSkirmish;
-        private Image imgLine, imgColumn, imgSquare, imgSkirmish;
+        // Formation buttons removed (replaced by FormationUIManager)
 
         // Command buttons
         private GameObject commandPanel;
@@ -51,8 +36,7 @@ namespace NapoleonicWars.UI
         private GameObject resultOverlay;
         private Text resultText;
 
-        // Controls help
-        private GameObject controlsPanel;
+        // Controls help removed
 
         // Speed controls
         private Text speedText;
@@ -89,15 +73,9 @@ namespace NapoleonicWars.UI
                 UpdateTopBar();
             }
 
-            // Throttle selection panel — morale/stamina/ammo
-            selectionTimer -= dt;
-            if (selectionTimer <= 0f)
-            {
-                selectionTimer = 0.2f;
-                UpdateSelectionPanel();
-            }
+            // UpdateSelectionPanel removed
 
-            UpdateFormationButtons();
+            // Default formation panel removed
             UpdateCommandButtons();
             UpdateDeploymentPanel();
             UpdateBattleResult();
@@ -118,12 +96,12 @@ namespace NapoleonicWars.UI
             canvas.transform.SetParent(transform);
 
             BuildTopBar();
-            BuildSelectionPanel();
-            BuildFormationPanel();
+            // BuildSelectionPanel(); removed
+            // BuildFormationPanel(); removed
             BuildCommandPanel();
             BuildDeploymentPanel();
             BuildBattleResult();
-            BuildControlsHelp();
+            // BuildControlsHelp(); removed
             BuildSpeedControls();
             BuildUnitCardsPanel();
         }
@@ -159,93 +137,9 @@ namespace NapoleonicWars.UI
             enemyCountText.fontStyle = FontStyle.Bold;
         }
 
-        // ===================== SELECTION PANEL =====================
-        private void BuildSelectionPanel()
-        {
-            RectTransform panel = UIFactory.CreateOrnatePanel(canvas.transform, "SelectionPanel", UIFactory.DeepCharcoal);
-            panel.anchorMin = new Vector2(0.01f, 0.02f);
-            panel.anchorMax = new Vector2(0.18f, 0.36f);
-            panel.offsetMin = Vector2.zero;
-            panel.offsetMax = Vector2.zero;
-            selectionPanel = panel.gameObject;
 
-            Transform inner = panel.Find("Inner");
-            UIFactory.AddVerticalLayout(inner.gameObject, 0f, new RectOffset(12, 12, 8, 8));
 
-            selectionHeaderText = UIFactory.CreateText(inner, "Header", "TACTICAL OVERSIGHT", 13, TextAnchor.MiddleLeft, UIFactory.EmpireGold);
-            selectionHeaderText.fontStyle = FontStyle.Bold;
-            UIFactory.AddLayoutElement(selectionHeaderText.gameObject, preferredHeight: 24);
 
-            UIFactory.CreateSeparator(inner);
-
-            unitsAliveText = UIFactory.CreateText(inner, "Alive", "Effectives: 0", 12, TextAnchor.MiddleLeft, UIFactory.Porcelain);
-            UIFactory.AddLayoutElement(unitsAliveText.gameObject, preferredHeight: 20);
-
-            unitTypeText = UIFactory.CreateText(inner, "Type", "", 12, TextAnchor.MiddleLeft, UIFactory.SilverText);
-            UIFactory.AddLayoutElement(unitTypeText.gameObject, preferredHeight: 20);
-
-            formationText = UIFactory.CreateText(inner, "Formation", "", 11, TextAnchor.MiddleLeft, UIFactory.Parchment);
-            UIFactory.AddLayoutElement(formationText.gameObject, preferredHeight: 18);
-
-            // Morale
-            GameObject mRow = new GameObject("MoraleRow");
-            mRow.transform.SetParent(inner, false);
-            UIFactory.AddHorizontalLayout(mRow, 6f);
-            UIFactory.AddLayoutElement(mRow, preferredHeight: 14);
-            UIFactory.CreateText(mRow.transform, "Lbl", "MORALE", 10, TextAnchor.MiddleLeft, UIFactory.SilverText);
-            var (mBg, mFill) = UIFactory.CreateProgressBar(mRow.transform, "MBar", Color.green);
-            moraleBg = mBg; moraleFill = mFill;
-            UIFactory.AddLayoutElement(mBg.gameObject, flexibleWidth: 1);
-
-            // Stamina 
-            GameObject sRow = new GameObject("StaminaRow");
-            sRow.transform.SetParent(inner, false);
-            UIFactory.AddHorizontalLayout(sRow, 6f);
-            UIFactory.AddLayoutElement(sRow, preferredHeight: 14);
-            UIFactory.CreateText(sRow.transform, "Lbl", "STAMINA", 10, TextAnchor.MiddleLeft, UIFactory.SilverText);
-            var (sBg, sFill) = UIFactory.CreateProgressBar(sRow.transform, "SBar", UIFactory.EmpireGold);
-            staminaBg = sBg; staminaFill = sFill;
-            UIFactory.AddLayoutElement(sBg.gameObject, flexibleWidth: 1);
-
-            UIFactory.CreateSeparator(inner);
-
-            ammoText = UIFactory.CreateText(inner, "Ammo", "", 11, TextAnchor.MiddleLeft, UIFactory.Parchment);
-            UIFactory.AddLayoutElement(ammoText.gameObject, preferredHeight: 18);
-
-            experienceText = UIFactory.CreateText(inner, "Exp", "", 11, TextAnchor.MiddleLeft, UIFactory.EmpireGold);
-            UIFactory.AddLayoutElement(experienceText.gameObject, preferredHeight: 18);
-
-            officerText = UIFactory.CreateText(inner, "Officer", "", 11, TextAnchor.MiddleLeft, UIFactory.Porcelain);
-            UIFactory.AddLayoutElement(officerText.gameObject, preferredHeight: 18);
-
-            selectionPanel.SetActive(false);
-        }
-
-        // ===================== FORMATION PANEL =====================
-        private void BuildFormationPanel()
-        {
-            RectTransform panel = UIFactory.CreateOrnatePanel(canvas.transform, "FormationPanel", UIFactory.DeepCharcoal);
-            panel.anchorMin = new Vector2(0.3f, 0.02f);
-            panel.anchorMax = new Vector2(0.48f, 0.08f);
-            panel.offsetMin = Vector2.zero;
-            panel.offsetMax = Vector2.zero;
-            formationPanel = panel.gameObject;
-
-            Transform inner = panel.Find("Inner");
-            UIFactory.AddHorizontalLayout(inner.gameObject, 6f, new RectOffset(8, 8, 8, 8));
-
-            btnLine = UIFactory.CreateButton(inner, "BtnLine", "LINE", 11, () => SetFormation(FormationType.Line));
-            btnColumn = UIFactory.CreateButton(inner, "BtnColumn", "COLUMN", 11, () => SetFormation(FormationType.Column));
-            btnSquare = UIFactory.CreateButton(inner, "BtnSquare", "SQUARE", 11, () => SetFormation(FormationType.Square));
-            btnSkirmish = UIFactory.CreateButton(inner, "BtnSkirmish", "SKIRMISH", 11, () => SetFormation(FormationType.Skirmish));
-
-            imgLine = btnLine.GetComponent<Image>();
-            imgColumn = btnColumn.GetComponent<Image>();
-            imgSquare = btnSquare.GetComponent<Image>();
-            imgSkirmish = btnSkirmish.GetComponent<Image>();
-
-            formationPanel.SetActive(false);
-        }
 
         // ===================== COMMAND PANEL =====================
         private void BuildCommandPanel()
@@ -404,39 +298,7 @@ namespace NapoleonicWars.UI
             resultOverlay.SetActive(false);
         }
 
-        // ===================== CONTROLS HELP =====================
-        private void BuildControlsHelp()
-        {
-            RectTransform panel = UIFactory.CreateOrnatePanel(canvas.transform, "ControlsPanel", UIFactory.DeepCharcoal);
-            panel.anchorMin = new Vector2(0.84f, 0.02f);
-            panel.anchorMax = new Vector2(0.99f, 0.32f);
-            panel.offsetMin = Vector2.zero;
-            panel.offsetMax = Vector2.zero;
-            controlsPanel = panel.gameObject;
 
-            Transform inner = panel.Find("Inner");
-            UIFactory.AddVerticalLayout(inner.gameObject, 0f, new RectOffset(12, 12, 8, 8));
-
-            UIFactory.CreateSectionHeader(inner, "HDR", "MANUAL OF ARMS", 12);
-
-            string[] controls = {
-                "WASD - PAN CAMERA",
-                "Q / E - ROTATE",
-                "SCROLL - ZOOM",
-                "LEFT CLICK - SELECT",
-                "RIGHT CLICK - COMMAND",
-                "F1-F4 - FORMATIONS",
-                "V - VOLLEY FIRE",
-                "C - CHARGE",
-                "R - RALLY"
-            };
-
-            foreach (string ctrl in controls)
-            {
-                var t = UIFactory.CreateText(inner, "Ctrl", ctrl, 10, TextAnchor.MiddleLeft, UIFactory.SilverText);
-                UIFactory.AddLayoutElement(t.gameObject, preferredHeight: 16);
-            }
-        }
 
         // ===================== UPDATE METHODS =====================
         private void UpdateTopBar()
@@ -447,96 +309,9 @@ namespace NapoleonicWars.UI
             enemyCountText.text = $"BRITAIN: {enemyAlive}";
         }
 
-        private void UpdateSelectionPanel()
-        {
-            bool hasSelection = SelectionManager.Instance != null && SelectionManager.Instance.HasSelection;
-            var regiments = hasSelection ? SelectionManager.Instance.SelectedRegiments : null;
-            bool show = hasSelection && regiments != null && regiments.Count > 0;
+        // UpdateSelectionPanel removed
 
-            selectionPanel.SetActive(show);
-            formationPanel.SetActive(show);
-            commandPanel.SetActive(show);
 
-            if (!show) return;
-
-            selectionHeaderText.text = "TACTICAL OVERSIGHT";
-
-            int totalAlive = 0;
-            foreach (var reg in regiments) totalAlive += reg.CachedAliveCount;
-            unitsAliveText.text = $"EFFECTIVES: {totalAlive}";
-
-            if (regiments.Count == 1)
-            {
-                var reg = regiments[0];
-
-                unitTypeText.gameObject.SetActive(true);
-                formationText.gameObject.SetActive(true);
-                moraleBg.transform.parent.gameObject.SetActive(true);
-                staminaBg.transform.parent.gameObject.SetActive(true);
-                ammoText.gameObject.SetActive(true);
-                experienceText.gameObject.SetActive(true);
-                officerText.gameObject.SetActive(true);
-
-                unitTypeText.text = reg.UnitData != null ? $"TYPE: {reg.UnitData.unitName.ToUpper()}" : "";
-                formationText.text = $"FORMATION: {reg.CurrentFormation.ToString().ToUpper()}";
-
-                // Morale
-                float morale = reg.CachedAverageMorale;
-                float maxMorale = reg.UnitData != null ? reg.UnitData.maxMorale : 100f;
-                float moralePercent = Mathf.Clamp01(morale / maxMorale);
-                moraleFill.color = GetMoraleColor(moralePercent);
-                moraleFill.GetComponent<RectTransform>().anchorMax = new Vector2(moralePercent, 1f);
-
-                // Stamina
-                float staminaPercent = reg.CachedAverageStamina;
-                staminaFill.color = staminaPercent > 0.3f ? UIFactory.EmpireGold : new Color(0.9f, 0.2f, 0.1f);
-                staminaFill.GetComponent<RectTransform>().anchorMax = new Vector2(staminaPercent, 1f);
-
-                // Ammo
-                int totalAmmo = reg.CachedTotalAmmo;
-                bool unlimited = reg.UnitData != null && reg.UnitData.hasUnlimitedAmmo;
-                ammoText.text = unlimited ? "AMMO: \u221E" : $"AMMO: {totalAmmo}";
-                ammoText.color = (!unlimited && totalAmmo <= 0) ? UIFactory.ImperialCrimson : UIFactory.Porcelain;
-
-                // Rank & Experience
-                RegimentRank regRank = reg.RegimentRankEnum;
-                UnitType uType = reg.UnitData != null ? reg.UnitData.unitType : UnitType.LineInfantry;
-                string rankName = RegimentRankSystem.GetRankName(regRank, uType);
-                float progress = RegimentRankSystem.GetRankProgress(reg.RegimentExperience);
-                experienceText.text = (int)regRank >= RegimentRankSystem.TotalRanks - 1
-                    ? $"{rankName.ToUpper()} (MAX)"
-                    : $"{rankName.ToUpper()} [{progress * 100:F0}%]";
-                experienceText.color = RegimentRankSystem.GetRankColor(regRank);
-
-                // Officer
-                officerText.text = reg.OfficerAlive ? "\u2605 OFFICER: ACTIVE" : "\u2606 OFFICER: KIA";
-                officerText.color = reg.OfficerAlive ? UIFactory.EmpireGold : UIFactory.ImperialCrimson;
-            }
-            else
-            {
-                unitTypeText.gameObject.SetActive(false);
-                formationText.gameObject.SetActive(false);
-                moraleBg.transform.parent.gameObject.SetActive(false);
-                staminaBg.transform.parent.gameObject.SetActive(false);
-                ammoText.gameObject.SetActive(false);
-                experienceText.gameObject.SetActive(false);
-                officerText.gameObject.SetActive(false);
-            }
-        }
-
-        private void UpdateFormationButtons()
-        {
-            if (!formationPanel.activeSelf) return;
-
-            var regs = SelectionManager.Instance.SelectedRegiments;
-            FormationType? currentForm = null;
-            if (regs.Count == 1) currentForm = regs[0].CurrentFormation;
-
-            imgLine.color = currentForm == FormationType.Line ? UIFactory.ButtonActive : UIFactory.ButtonNormal;
-            imgColumn.color = currentForm == FormationType.Column ? UIFactory.ButtonActive : UIFactory.ButtonNormal;
-            imgSquare.color = currentForm == FormationType.Square ? UIFactory.ButtonActive : UIFactory.ButtonNormal;
-            imgSkirmish.color = currentForm == FormationType.Skirmish ? UIFactory.ButtonActive : UIFactory.ButtonNormal;
-        }
 
         private void UpdateCommandButtons()
         {

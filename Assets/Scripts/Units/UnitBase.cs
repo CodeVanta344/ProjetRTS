@@ -97,6 +97,7 @@ namespace NapoleonicWars.Units
         private Renderer unitRenderer;
         private Color originalColor;
         private static readonly Color selectedHighlight = new Color(0.3f, 1f, 0.3f, 1f);
+        private float formationBaseSpeed = 0f;
         
         // Material property block for zero-allocation color changes
         private MaterialPropertyBlock mpb;
@@ -356,6 +357,104 @@ namespace NapoleonicWars.Units
             transform.position = pos;
         }
 
+        /// <summary>
+        /// Update target position during regiment sliding formation movement.
+        /// Unlike MoveTo, this only updates the target without resetting state
+        /// (avoids Idle/Moving flickering when regiment pushes new targets each frame).
+        /// </summary>
+        public void UpdateFormationTarget(Vector3 position, float baseSpeed)
+        {
+            if (currentState == UnitState.Dead) return;
+            targetPosition = position;
+            formationBaseSpeed = baseSpeed;
+            if (currentState != UnitState.Moving)
+            {
+                targetEnemy = null;
+                currentState = UnitState.Moving;
+            }
+        }
+
+
+
+        public void AttackTarget(UnitBase enemy)
+        {
+            if (currentState == UnitState.Dead) return;
+            targetEnemy = enemy;
+            currentState = UnitState.Attacking;
+        }
+
+        public void ChargeTarget(UnitBase enemy)
+        {
+            if (currentState == UnitState.Dead) return;
+            if (unitData != null && !unitData.canCharge) { AttackTarget(enemy); return; }
+
+            targetEnemy = enemy;
+            chargeStartDistance = Vector3.Distance(transform.position, enemy.transform.position);
+            currentState = UnitState.Charging;
+
+            if (BattleSoundManager.Instance != null && Random.value < 0.15f)
+                BattleSoundManager.Instance.PlayChargeShout(transform.position);
+        }
+
+        public void AttackMoveTo(Vector3 position)
+        {
+            if (currentState == UnitState.Dead) return;
+            targetPosition = position;
+            currentState = UnitState.Moving;
+        }
+
+        public void SetVolleyMode(bool enabled)
+        {
+            isInVolleyMode = enabled;
+        }
+
+        /// <summary>
+        /// Set kneeling state for volley fire. Kneeling units stand up when reload finishes.
+        /// </summary>
+        public void SetKneeling(bool kneeling)
+        {
+            isKneeling = kneeling;
+            
+            // Notify animator
+            if (unitAnimator != null)
+            {
+                unitAnimator.SetKneeling(kneeling);
+            }
+            
+            // Start reload timer when kneeling after fire
+            if (kneeling && unitData != null)
+            {
+                reloadTimer = GetEffectiveAttackCooldown();
+            }
+        }
+
+        private AttackDirection GetAttackDirection(UnitBase target)
+        {
+            if (target == null) return AttackDirection.Front;
+            
+            Vector3 toAttacker = (transform.position - target.transform.position).normalized;
+            Vector3 targetForward = target.transform.forward;
+            
+            float dot = Vector3.Dot(targetForward, toAttacker);
+            
+            if (dot < -0.5f) return AttackDirection.Rear; // attacker is behind
+            if (dot < 0.5f) return AttackDirection.Flank;  // attacker is on the side
+            return AttackDirection.Front;                  // attacker is in front
+        }
+
+        private float GetDirectionMultiplier(AttackDirection attackDir)
+        {
+            switch (attackDir)
+            {
+                case AttackDirection.Rear:
+                    return unitData != null ? unitData.rearDamageMultiplier : 2.0f;
+                case AttackDirection.Flank:
+                    return unitData != null ? unitData.flankingDamageMultiplier : 1.5f;
+                default:
+                    return 1.0f;
+            }
+        }
+
         private void UpdateIdle()
         {
             // No combat during deployment phase
@@ -418,21 +517,28 @@ namespace NapoleonicWars.Units
             float dz = targetPosition.z - transform.position.z;
             float distSqr = dx * dx + dz * dz;
 
-            if (distSqr < 0.09f) // 0.3^2 — tighter than before for clean ranks
+            if (distSqr < 0.04f) // 0.2^2 — Snug fit in slot
             {
-                // SNAP to exact target position for clean formation alignment
-                Vector3 snapPos = transform.position;
-                snapPos.x = targetPosition.x;
-                snapPos.z = targetPosition.z;
-                transform.position = snapPos;
-                currentState = UnitState.Idle;
+                if (Regiment != null && !Regiment.IsRegimentMoving)
+                {
+                    Vector3 snapPos = transform.position;
+                    snapPos.x = targetPosition.x;
+                    snapPos.z = targetPosition.z;
+                    transform.position = snapPos;
+                    currentState = UnitState.Idle;
+                }
+                else
+                {
+                    // We are at the moving slot, follow the regiment perfectly
+                    transform.position = targetPosition; // Hard lock to slot
+                }
                 
-                // Face regiment direction when arriving at formation slot
+                // Align to regiment facing
                 if (Regiment != null)
                 {
                     Vector3 regFwd = Regiment.FacingDirection;
                     if (regFwd.sqrMagnitude > 0.01f)
-                        transform.forward = regFwd;
+                        transform.forward = Vector3.Lerp(transform.forward, regFwd, dt * 10f);
                 }
                 return;
             }
@@ -441,9 +547,27 @@ namespace NapoleonicWars.Units
             float dirX = dx * invDist;
             float dirZ = dz * invDist;
 
-            float speed = GetEffectiveMoveSpeed();
+            // Speed calculation:
+            // If the regiment is moving, the slot is moving. We must run to catch up if we are far.
+            float unitMaxSpeed = GetEffectiveMoveSpeed();
+            float moveSpeed = unitMaxSpeed;
+            
+            if (Regiment != null && Regiment.IsRegimentMoving)
+            {
+                // If we are relatively close to our slot, match regiment speed smoothly
+                if (distSqr < 4f)
+                {
+                    moveSpeed = Mathf.Lerp(formationBaseSpeed, unitMaxSpeed, distSqr / 4f);
+                }
+                else
+                {
+                    // Way behind, run up to 1.5x max speed to catch up
+                    moveSpeed = unitMaxSpeed * 1.5f; 
+                }
+            }
+
             float dist = Mathf.Sqrt(distSqr);
-            float step = Mathf.Min(speed * dt, dist); // Clamp step to remaining distance (prevent overshoot)
+            float step = Mathf.Min(moveSpeed * dt, dist);
 
             Vector3 pos = transform.position;
             pos.x += dirX * step;
@@ -452,22 +576,31 @@ namespace NapoleonicWars.Units
 
             Vector3 dir = new Vector3(dirX, 0f, dirZ);
             
-            // Face regiment direction while moving (maintains formation cohesion)
-            // Only use individual direction if no regiment or regiment isn't moving
-            if (Regiment != null)
+            if (Regiment != null && Regiment.IsRegimentMoving)
             {
-                Vector3 regFwd = Regiment.FacingDirection;
-                if (regFwd.sqrMagnitude > 0.01f)
-                    transform.forward = Vector3.Lerp(transform.forward, regFwd, dt * 5f);
+                if (distSqr > 4f)
+                {
+                    // Running to catch up, face movement
+                    transform.forward = Vector3.Lerp(transform.forward, dir, dt * 10f);
+                }
                 else
-                    transform.forward = Vector3.Lerp(transform.forward, dir, dt * 3f);
+                {
+                    // Caught up and marching, smoothly align to regiment facing
+                    Vector3 regFwd = Regiment.FacingDirection;
+                    if (regFwd.sqrMagnitude > 0.01f)
+                    {
+                        // Blend between walking direction and looking forward
+                        Vector3 blended = Vector3.Lerp(dir, regFwd, 1f - (distSqr / 4f));
+                        transform.forward = Vector3.Lerp(transform.forward, blended.normalized, dt * 5f);
+                    }
+                }
             }
             else
             {
-                transform.forward = Vector3.Lerp(transform.forward, dir, dt * 3f);
+                transform.forward = Vector3.Lerp(transform.forward, dir, dt * 8f);
             }
 
-            // Snap to terrain height — needs to be frequent for smooth movement
+            // Snap to terrain height
             terrainSnapTimer -= dt;
             if (terrainSnapTimer <= 0f)
             {
@@ -765,57 +898,23 @@ namespace NapoleonicWars.Units
             currentState = UnitState.Moving;
         }
 
-        public void AttackTarget(UnitBase enemy)
-        {
-            if (currentState == UnitState.Dead) return;
-            targetEnemy = enemy;
-            currentState = UnitState.Attacking;
-        }
-
-        public void ChargeTarget(UnitBase enemy)
-        {
-            if (currentState == UnitState.Dead) return;
-            if (unitData != null && !unitData.canCharge) { AttackTarget(enemy); return; }
-
-            targetEnemy = enemy;
-            chargeStartDistance = Vector3.Distance(transform.position, enemy.transform.position);
-            currentState = UnitState.Charging;
-
-            if (BattleSoundManager.Instance != null && Random.value < 0.15f)
-                BattleSoundManager.Instance.PlayChargeShout(transform.position);
-        }
-
-        public void AttackMoveTo(Vector3 position)
+        /// <summary>
+        /// Update target position during regiment sliding formation movement.
+        /// Unlike MoveTo, this only updates the target without resetting state
+        /// (avoids Idle/Moving flickering when regiment pushes new targets each frame).
+        /// </summary>
+        public void UpdateFormationTarget(Vector3 position)
         {
             if (currentState == UnitState.Dead) return;
             targetPosition = position;
-            currentState = UnitState.Moving;
-        }
-
-        public void SetVolleyMode(bool enabled)
-        {
-            isInVolleyMode = enabled;
-        }
-
-        /// <summary>
-        /// Set kneeling state for volley fire. Kneeling units stand up when reload finishes.
-        /// </summary>
-        public void SetKneeling(bool kneeling)
-        {
-            isKneeling = kneeling;
-            
-            // Notify animator
-            if (unitAnimator != null)
+            if (currentState != UnitState.Moving)
             {
-                unitAnimator.SetKneeling(kneeling);
-            }
-            
-            // Start reload timer when kneeling after fire
-            if (kneeling && unitData != null)
-            {
-                reloadTimer = GetEffectiveAttackCooldown();
+                targetEnemy = null;
+                currentState = UnitState.Moving;
             }
         }
+
+
 
         private void PerformAttack(UnitBase target)
         {
@@ -1019,30 +1118,7 @@ namespace NapoleonicWars.Units
             }
         }
 
-        public AttackDirection GetAttackDirection(UnitBase target)
-        {
-            if (target == null) return AttackDirection.Front;
 
-            Vector3 toAttacker = (transform.position - target.transform.position).normalized;
-            float dot = Vector3.Dot(target.transform.forward, toAttacker);
-
-            if (dot > 0.5f) return AttackDirection.Front;
-            if (dot < -0.3f) return AttackDirection.Rear;
-            return AttackDirection.Flank;
-        }
-
-        private float GetDirectionMultiplier(AttackDirection dir)
-        {
-            switch (dir)
-            {
-                case AttackDirection.Flank:
-                    return unitData != null ? unitData.flankingDamageMultiplier : 1.5f;
-                case AttackDirection.Rear:
-                    return unitData != null ? unitData.rearDamageMultiplier : 2f;
-                default:
-                    return 1f;
-            }
-        }
 
         private float GetAntiUnitBonus(UnitBase target)
         {
