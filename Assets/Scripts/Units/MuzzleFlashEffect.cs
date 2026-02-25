@@ -134,7 +134,6 @@ namespace NapoleonicWars.Units
         private void Awake()
         {
             cachedRenderer = GetComponent<Renderer>();
-            mpb = new MaterialPropertyBlock();
         }
 
         public void Reset()
@@ -162,6 +161,8 @@ namespace NapoleonicWars.Units
             // Fade out using MaterialPropertyBlock - no material allocation
             if (cachedRenderer != null)
             {
+                if (mpb == null) mpb = new MaterialPropertyBlock(); // GUARANTEE IT'S NOT NULL
+                
                 float alpha = Mathf.Lerp(0.6f, 0f, t);
                 cachedRenderer.GetPropertyBlock(mpb);
                 Color c = new Color(0.7f, 0.7f, 0.7f, alpha);

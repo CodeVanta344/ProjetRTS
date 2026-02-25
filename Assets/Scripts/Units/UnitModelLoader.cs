@@ -126,18 +126,14 @@ namespace NapoleonicWars.Units
             {
                 // Load available models — prefer RIGGED (has skeleton for bone animation!)
                 string riggedPath = "Models/FrenchLineInfantry_Rigged/Soldier_Rigged";
-                string highPolyPath = "Models/FrenchLineInfantry_HighPoly/Meshy_AI_Colonial_Soldier_in_a_0223111650_texture";
-                string midPolyPath = "Models/FrenchLineInfantry_MidPoly/Meshy_AI_Colonial_Soldier_in_a_0223111618_texture";
-                string lowPolyPath = "Models/FrenchLineInfantry_LowPoly/Meshy_AI_Colonial_Soldier_in_a_0223111450_texture";
+                string highPolyPath = "Models/FrenchLineInfantry/Meshy_AI_Colonial_Soldier_in_a_0223111650_texture";
 
                 GameObject riggedPrefab = Resources.Load<GameObject>(riggedPath);
                 GameObject highPolyPrefab = Resources.Load<GameObject>(highPolyPath);
-                GameObject midPolyPrefab = Resources.Load<GameObject>(midPolyPath);
-                GameObject lowPolyPrefab = Resources.Load<GameObject>(lowPolyPath);
 
-                // Priority: rigged > high > mid > low  
-                GameObject primaryPrefab = riggedPrefab ?? highPolyPrefab ?? midPolyPrefab ?? lowPolyPrefab;
-                GameObject distantPrefab = lowPolyPrefab ?? midPolyPrefab;
+                // Priority: rigged > high 
+                GameObject primaryPrefab = riggedPrefab ?? highPolyPrefab;
+                GameObject distantPrefab = highPolyPrefab;
 
                 if (primaryPrefab == null)
                 {
@@ -148,15 +144,9 @@ namespace NapoleonicWars.Units
                 Debug.Log($"[UnitModelLoader] French Infantry: primary={primaryPrefab.name} (highPoly={(highPolyPrefab != null)})");
 
                 // --- Build material from best available textures ---
-                Texture2D albedo = Resources.Load<Texture2D>(highPolyPath) 
-                    ?? Resources.Load<Texture2D>(midPolyPath)
-                    ?? Resources.Load<Texture2D>(lowPolyPath);
-                Texture2D normal = Resources.Load<Texture2D>(highPolyPath + "_normal") 
-                    ?? Resources.Load<Texture2D>(midPolyPath + "_normal")
-                    ?? Resources.Load<Texture2D>(lowPolyPath + "_normal");
-                Texture2D metallic = Resources.Load<Texture2D>(highPolyPath + "_metallic") 
-                    ?? Resources.Load<Texture2D>(midPolyPath + "_metallic")
-                    ?? Resources.Load<Texture2D>(lowPolyPath + "_metallic");
+                Texture2D albedo = Resources.Load<Texture2D>(highPolyPath);
+                Texture2D normal = Resources.Load<Texture2D>(highPolyPath + "_normal");
+                Texture2D metallic = Resources.Load<Texture2D>(highPolyPath + "_metallic");
 
                 Material mat = new Material(NapoleonicWars.Core.URPMaterialHelper.LitShader);
                 mat.enableInstancing = true;
