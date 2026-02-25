@@ -169,7 +169,7 @@ namespace NapoleonicWars.UI
                     case UnitType.Hussar:
                     case UnitType.Lancer: cavalry++; break;
                     case UnitType.Artillery: artillery++; break;
-                    case UnitType.ImperialGuard: guard++; break;
+                    case UnitType.GuardInfantry: guard++; break;
                     case UnitType.GuardCavalry: guardCav++; break;
                     case UnitType.GuardArtillery: guardArt++; break;
                 }

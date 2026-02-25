@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Events;
+using TMPro;
 
 namespace NapoleonicWars.UI
 {
@@ -227,6 +228,30 @@ namespace NapoleonicWars.UI
             shadow.effectDistance = new Vector2(0.5f, -0.5f);
 
             return text;
+        }
+
+        /// <summary>
+        /// Create a TextMeshPro text element — superior rendering with SDF fonts.
+        /// Use this over CreateText for any new UI that needs crisp, scalable text.
+        /// </summary>
+        public static TextMeshProUGUI CreateTMPText(Transform parent, string name, string content,
+            float fontSize = 14f, TextAlignmentOptions alignment = TextAlignmentOptions.MidlineLeft, Color? color = null)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.AddComponent<RectTransform>();
+
+            TextMeshProUGUI tmp = go.AddComponent<TextMeshProUGUI>();
+            tmp.text = content;
+            tmp.fontSize = fontSize;
+            tmp.alignment = alignment;
+            tmp.color = color ?? Porcelain;
+            tmp.raycastTarget = false;
+            tmp.richText = true;
+            tmp.overflowMode = TextOverflowModes.Ellipsis;
+            tmp.enableWordWrapping = true;
+
+            return tmp;
         }
 
         // ════════════════════════════════════════════════════════════

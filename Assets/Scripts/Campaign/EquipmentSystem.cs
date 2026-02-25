@@ -99,12 +99,33 @@ namespace NapoleonicWars.Campaign
             var needs = new RegimentEquipmentNeeds();
             switch (type)
             {
+                // ── INFANTRY ──────────────────────────────────────
+                case UnitType.Militia:
+                    needs.requirements[EquipmentType.Muskets] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = (int)(size * 0.3f);
+                    break;
+                case UnitType.TrainedMilitia:
+                    needs.requirements[EquipmentType.Muskets] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = (int)(size * 0.4f);
+                    needs.requirements[EquipmentType.Uniforms] = (int)(size * 0.5f);
+                    break;
                 case UnitType.LineInfantry:
-                case UnitType.LightInfantry:
                     needs.requirements[EquipmentType.Muskets] = size;
                     needs.requirements[EquipmentType.Bayonets] = size;
                     needs.requirements[EquipmentType.Uniforms] = size;
                     needs.requirements[EquipmentType.Gunpowder] = (int)(size * 0.5f);
+                    break;
+                case UnitType.LightInfantry:
+                    needs.requirements[EquipmentType.Muskets] = size;
+                    needs.requirements[EquipmentType.Bayonets] = (int)(size * 0.5f);
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = (int)(size * 0.6f);
+                    break;
+                case UnitType.Fusilier:
+                    needs.requirements[EquipmentType.Muskets] = size;
+                    needs.requirements[EquipmentType.Bayonets] = size;
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = (int)(size * 0.7f);
                     break;
                 case UnitType.Grenadier:
                     needs.requirements[EquipmentType.Muskets] = size;
@@ -112,12 +133,79 @@ namespace NapoleonicWars.Campaign
                     needs.requirements[EquipmentType.Uniforms] = size;
                     needs.requirements[EquipmentType.Gunpowder] = (int)(size * 0.8f);
                     break;
+                case UnitType.Voltigeur:
+                    needs.requirements[EquipmentType.Muskets] = size;
+                    needs.requirements[EquipmentType.Bayonets] = (int)(size * 0.6f);
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = (int)(size * 0.8f);
+                    break;
+                case UnitType.Chasseur:
+                    needs.requirements[EquipmentType.Muskets] = size;           // Rifles
+                    needs.requirements[EquipmentType.Bayonets] = size;
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = size;         // Rifles use more powder
+                    break;
+                case UnitType.GuardInfantry:
+                    needs.requirements[EquipmentType.Muskets] = size;
+                    needs.requirements[EquipmentType.Bayonets] = size;
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = size;
+                    break;
+                case UnitType.OldGuard:
+                    needs.requirements[EquipmentType.Muskets] = size;
+                    needs.requirements[EquipmentType.Bayonets] = size;
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = (int)(size * 1.2f);
+                    break;
+
+                // ── CAVALRY ──────────────────────────────────────
+                case UnitType.MilitiaCavalry:
+                    needs.requirements[EquipmentType.Sabres] = size;
+                    needs.requirements[EquipmentType.Horses] = size;
+                    break;
+                case UnitType.Dragoon:
+                    needs.requirements[EquipmentType.Muskets] = size;    // Dragoons fight dismounted too
+                    needs.requirements[EquipmentType.Sabres] = size;
+                    needs.requirements[EquipmentType.Horses] = size;
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = (int)(size * 0.3f);
+                    break;
                 case UnitType.Cavalry:
+                    needs.requirements[EquipmentType.Sabres] = size;
+                    needs.requirements[EquipmentType.Horses] = size;
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    break;
                 case UnitType.Hussar:
+                    needs.requirements[EquipmentType.Sabres] = size;
+                    needs.requirements[EquipmentType.Horses] = size;
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    break;
                 case UnitType.Lancer:
                     needs.requirements[EquipmentType.Sabres] = size;
                     needs.requirements[EquipmentType.Horses] = size;
                     needs.requirements[EquipmentType.Uniforms] = size;
+                    break;
+                case UnitType.Cuirassier:
+                    needs.requirements[EquipmentType.Sabres] = size;
+                    needs.requirements[EquipmentType.Horses] = size;
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    break;
+                case UnitType.GuardCavalry:
+                    needs.requirements[EquipmentType.Sabres] = size;
+                    needs.requirements[EquipmentType.Horses] = size;
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    break;
+                case UnitType.Mameluke:
+                    needs.requirements[EquipmentType.Sabres] = size;
+                    needs.requirements[EquipmentType.Horses] = size;
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    break;
+
+                // ── ARTILLERY ─────────────────────────────────────
+                case UnitType.GarrisonCannon:
+                    needs.requirements[EquipmentType.CannonsLight] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = size * 2;
+                    needs.requirements[EquipmentType.Cannonballs] = size * 3;
                     break;
                 case UnitType.Artillery:
                     needs.requirements[EquipmentType.CannonsLight] = (int)(size * 0.6f);
@@ -125,6 +213,49 @@ namespace NapoleonicWars.Campaign
                     needs.requirements[EquipmentType.Gunpowder] = size * 2;
                     needs.requirements[EquipmentType.Cannonballs] = size * 3;
                     needs.requirements[EquipmentType.Horses] = size * 2;
+                    break;
+                case UnitType.HorseArtillery:
+                    needs.requirements[EquipmentType.CannonsLight] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = size * 2;
+                    needs.requirements[EquipmentType.Cannonballs] = size * 3;
+                    needs.requirements[EquipmentType.Horses] = size * 3;
+                    break;
+                case UnitType.Howitzer:
+                    needs.requirements[EquipmentType.CannonsHeavy] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = size * 3;
+                    needs.requirements[EquipmentType.Cannonballs] = size * 4;
+                    needs.requirements[EquipmentType.Horses] = size * 2;
+                    break;
+                case UnitType.GrandBattery:
+                    needs.requirements[EquipmentType.CannonsHeavy] = size;
+                    needs.requirements[EquipmentType.CannonsLight] = (int)(size * 0.5f);
+                    needs.requirements[EquipmentType.Gunpowder] = size * 4;
+                    needs.requirements[EquipmentType.Cannonballs] = size * 5;
+                    needs.requirements[EquipmentType.Horses] = size * 3;
+                    break;
+                case UnitType.GuardArtillery:
+                    needs.requirements[EquipmentType.CannonsHeavy] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = size * 4;
+                    needs.requirements[EquipmentType.Cannonballs] = size * 5;
+                    needs.requirements[EquipmentType.Horses] = size * 3;
+                    break;
+
+                // ── SPECIAL UNITS ─────────────────────────────────
+                case UnitType.Engineer:
+                case UnitType.Sapper:
+                    needs.requirements[EquipmentType.Muskets] = (int)(size * 0.5f);
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = size;     // Explosives
+                    break;
+                case UnitType.Marine:
+                    needs.requirements[EquipmentType.Muskets] = size;
+                    needs.requirements[EquipmentType.Bayonets] = size;
+                    needs.requirements[EquipmentType.Uniforms] = size;
+                    needs.requirements[EquipmentType.Gunpowder] = (int)(size * 0.6f);
+                    break;
+                case UnitType.Partisan:
+                    needs.requirements[EquipmentType.Muskets] = (int)(size * 0.7f);
+                    needs.requirements[EquipmentType.Gunpowder] = (int)(size * 0.3f);
                     break;
             }
             return needs;
@@ -134,24 +265,67 @@ namespace NapoleonicWars.Campaign
         public static Dictionary<EquipmentType, float> AttritionPerTurn(UnitType type, int size)
         {
             var attrition = new Dictionary<EquipmentType, float>();
-            float ratio = size / 60f; // Normalize to standard regiment
+            float ratio = size / 200f; // Normalize to standard regiment size
             switch (type)
             {
+                case UnitType.Militia:
+                case UnitType.TrainedMilitia:
+                    attrition[EquipmentType.Gunpowder] = 3f * ratio;
+                    break;
                 case UnitType.LineInfantry:
                 case UnitType.LightInfantry:
-                case UnitType.Grenadier:
+                case UnitType.Fusilier:
                     attrition[EquipmentType.Gunpowder] = 5f * ratio;
                     attrition[EquipmentType.Uniforms] = 1f * ratio;
+                    break;
+                case UnitType.Grenadier:
+                case UnitType.Voltigeur:
+                case UnitType.Chasseur:
+                case UnitType.GuardInfantry:
+                case UnitType.OldGuard:
+                    attrition[EquipmentType.Gunpowder] = 8f * ratio;
+                    attrition[EquipmentType.Uniforms] = 1.5f * ratio;
+                    break;
+                case UnitType.MilitiaCavalry:
+                    attrition[EquipmentType.Horses] = 1f * ratio;
+                    break;
+                case UnitType.Dragoon:
+                    attrition[EquipmentType.Horses] = 2f * ratio;
+                    attrition[EquipmentType.Uniforms] = 1f * ratio;
+                    attrition[EquipmentType.Gunpowder] = 2f * ratio;
                     break;
                 case UnitType.Cavalry:
                 case UnitType.Hussar:
                 case UnitType.Lancer:
+                case UnitType.Cuirassier:
+                case UnitType.GuardCavalry:
+                case UnitType.Mameluke:
                     attrition[EquipmentType.Horses] = 2f * ratio;
                     attrition[EquipmentType.Uniforms] = 1f * ratio;
                     break;
+                case UnitType.GarrisonCannon:
+                    attrition[EquipmentType.Gunpowder] = 4f * ratio;
+                    attrition[EquipmentType.Cannonballs] = 3f * ratio;
+                    break;
                 case UnitType.Artillery:
+                case UnitType.HorseArtillery:
+                case UnitType.Howitzer:
+                case UnitType.GrandBattery:
+                case UnitType.GuardArtillery:
                     attrition[EquipmentType.Gunpowder] = 10f * ratio;
                     attrition[EquipmentType.Cannonballs] = 8f * ratio;
+                    attrition[EquipmentType.Horses] = 1f * ratio;
+                    break;
+                case UnitType.Engineer:
+                case UnitType.Sapper:
+                    attrition[EquipmentType.Gunpowder] = 6f * ratio;
+                    break;
+                case UnitType.Marine:
+                    attrition[EquipmentType.Gunpowder] = 4f * ratio;
+                    attrition[EquipmentType.Uniforms] = 1f * ratio;
+                    break;
+                case UnitType.Partisan:
+                    attrition[EquipmentType.Gunpowder] = 2f * ratio;
                     break;
             }
             return attrition;

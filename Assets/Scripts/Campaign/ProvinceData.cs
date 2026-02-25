@@ -79,6 +79,7 @@ namespace NapoleonicWars.Campaign
 
         // Recruitment
         public bool hasBarracks = false;
+        public bool isCoastal = false;
         public bool hasStables = false;
         public bool hasArmory = false;
 
@@ -640,31 +641,36 @@ namespace NapoleonicWars.Campaign
         {
             switch (type)
             {
-                case BuildingType.Farm: return 1;
-                case BuildingType.Mine: return 2;
-                case BuildingType.Barracks: return 2;
-                case BuildingType.Stables: return 3;
-                case BuildingType.Armory: return 3;
-                case BuildingType.Fortress: return 4;
-                case BuildingType.Market: return 2;
-                case BuildingType.Church: return 1;
-                case BuildingType.University: return 3;
+                // Basic buildings — ~10-15 days
+                case BuildingType.Farm: return 10;
+                case BuildingType.Church: return 12;
+                case BuildingType.VillageBarracks: return 10;
                 
-                // Research buildings
-                case BuildingType.SmallArtillerySchool: return 2;
-                case BuildingType.ProvincialArtillerySchool: return 3;
-                case BuildingType.RoyalArtilleryAcademy: return 4;
-                case BuildingType.GrandArtilleryAcademy: return 5;
-                case BuildingType.ImperialArtilleryAcademy: return 6;
+                // Mid-tier — ~15-20 days
+                case BuildingType.Mine: return 15;
+                case BuildingType.Market: return 15;
+                case BuildingType.Barracks: return 18;
+                case BuildingType.ProvincialBarracks: return 20;
+                case BuildingType.SmallArtillerySchool: return 18;
                 
-                // Military buildings
-                case BuildingType.VillageBarracks: return 1;
-                case BuildingType.ProvincialBarracks: return 2;
-                case BuildingType.MilitaryAcademy: return 3;
-                case BuildingType.RoyalMilitaryCollege: return 4;
-                case BuildingType.MilitaryUniversity: return 5;
+                // Advanced — ~20-30 days
+                case BuildingType.Stables: return 22;
+                case BuildingType.Armory: return 25;
+                case BuildingType.University: return 28;
+                case BuildingType.ProvincialArtillerySchool: return 25;
+                case BuildingType.MilitaryAcademy: return 28;
                 
-                default: return 1;
+                // High-tier — ~30-40 days
+                case BuildingType.Fortress: return 35;
+                case BuildingType.RoyalArtilleryAcademy: return 32;
+                case BuildingType.RoyalMilitaryCollege: return 35;
+                case BuildingType.GrandArtilleryAcademy: return 38;
+                
+                // Top-tier — ~40-45 days  
+                case BuildingType.ImperialArtilleryAcademy: return 45;
+                case BuildingType.MilitaryUniversity: return 42;
+                
+                default: return 10;
             }
         }
     }

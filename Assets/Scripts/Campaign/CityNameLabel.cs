@@ -59,7 +59,7 @@ namespace NapoleonicWars.Campaign
             constGO.transform.SetParent(canvasGO.transform, false);
             constructionText = constGO.AddComponent<Text>();
             constructionText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            constructionText.fontSize = 14;
+            constructionText.fontSize = 16;
             constructionText.alignment = TextAnchor.MiddleCenter;
             constructionText.horizontalOverflow = HorizontalWrapMode.Overflow;
             constructionText.verticalOverflow = VerticalWrapMode.Overflow;
@@ -69,8 +69,8 @@ namespace NapoleonicWars.Campaign
             constructionText.text = "";
             
             RectTransform constRect = constGO.GetComponent<RectTransform>();
-            constRect.anchorMin = new Vector2(0f, 0.82f);
-            constRect.anchorMax = new Vector2(1f, 1f);
+            constRect.anchorMin = new Vector2(0f, 0.75f);
+            constRect.anchorMax = new Vector2(1f, 1.15f);
             constRect.offsetMin = Vector2.zero;
             constRect.offsetMax = Vector2.zero;
             
@@ -211,25 +211,37 @@ namespace NapoleonicWars.Campaign
         {
             if (constructionText == null) return;
             
-            string constInfo = "";
+            var lines = new List<string>();
+            
+            // === Building construction ===
             if (cityData.buildings != null)
             {
                 foreach (var b in cityData.buildings)
                 {
                     if (b.isConstructing && !b.isConstructed)
                     {
-                        string bName = b.buildingType.ToString();
-                        int turns = b.turnsToComplete;
-                        constInfo = $"🔨 {bName} ({turns}t)";
-                        break; // Show first active construction
+                        string bName = b.buildingName ?? b.buildingType.ToString();
+                        lines.Add($"<color=#FFB366>🔨 {bName} ({b.constructionTurnsRemaining}j)</color>");
+                        break; // Show first active construction only
                     }
                 }
             }
             
-            bool hasConstruction = !string.IsNullOrEmpty(constInfo);
-            constructionText.gameObject.SetActive(hasConstruction);
-            if (hasConstruction)
-                constructionText.text = constInfo;
+            // === Unit production queue ===
+            if (cityData.productionQueue != null && cityData.productionQueue.Count > 0)
+            {
+                var item = cityData.productionQueue[0]; // Show first item
+                string unitName = item.unitType.ToString();
+                lines.Add($"<color=#7FDB7F>⚔ {unitName} ({item.turnsRemaining}j)</color>");
+                
+                if (cityData.productionQueue.Count > 1)
+                    lines.Add($"<color=#B0B0B0>+{cityData.productionQueue.Count - 1} en file</color>");
+            }
+            
+            bool hasActivity = lines.Count > 0;
+            constructionText.gameObject.SetActive(hasActivity);
+            if (hasActivity)
+                constructionText.text = string.Join("\n", lines);
         }
         
         private int EstimateIncome(CityData city)
@@ -271,6 +283,8 @@ namespace NapoleonicWars.Campaign
             return pop.ToString();
         }
         
+        private float refreshTimer;
+        
         private void LateUpdate()
         {
             if (mainCamera == null)
@@ -279,6 +293,14 @@ namespace NapoleonicWars.Campaign
                 if (mainCamera == null) return;
             }
             if (canvasRect == null) return;
+            
+            // Periodically refresh activity indicators (every 2 seconds)
+            refreshTimer -= Time.deltaTime;
+            if (refreshTimer <= 0f && linkedCityData != null)
+            {
+                refreshTimer = 2f;
+                UpdateConstructionIndicator(linkedCityData);
+            }
             
             // Fixed flat rotation — labels stay horizontal on the map (no billboard)
             transform.rotation = Quaternion.Euler(90f, 0f, 0f);

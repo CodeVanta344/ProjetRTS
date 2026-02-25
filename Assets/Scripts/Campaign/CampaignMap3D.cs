@@ -53,10 +53,18 @@ namespace NapoleonicWars.Campaign
         private GameObject convoysContainer;
         private float convoyAnimTimer = 0f;
         
+        // Supply wagons (city → army resupply)
+        private Dictionary<string, GameObject> wagonMarkers = new Dictionary<string, GameObject>();
+        private GameObject wagonsContainer;
+        
         // Selection
         private ArmyMapMarker selectedArmyMarker;
         private ProvinceData selectedTargetProvince;
         private List<GameObject> movementPathVisuals = new List<GameObject>();
+        
+        // Movement arrows: armyId → (lineObj, labelObj)
+        private Dictionary<string, (GameObject line, GameObject label)> movementArrows = new Dictionary<string, (GameObject, GameObject)>();
+        private Dictionary<string, float> smoothMarchProgress = new Dictionary<string, float>();
         
         // References
         private CampaignManager campaignManager;
@@ -678,7 +686,7 @@ namespace NapoleonicWars.Campaign
             int level = cityData?.cityLevel ?? 1;
             float colliderRadius = level switch
             {
-                1 => 12f, 2 => 18f, 3 => 28f, 4 => 38f, 5 => 50f, _ => 12f
+                1 => 0.8f, 2 => 1.0f, 3 => 1.3f, 4 => 1.6f, 5 => 2.0f, _ => 0.8f
             };
             SphereCollider col = cityGO.AddComponent<SphereCollider>();
             col.radius = colliderRadius; col.isTrigger = false;
@@ -890,13 +898,29 @@ namespace NapoleonicWars.Campaign
                 CreateArmyMarker(kvp.Value);
         }
         
-        private void CreateArmyMarker(ArmyData army)
+        public void CreateArmyMarker(ArmyData army)
         {
-            if (!campaignManager.Provinces.ContainsKey(army.currentProvinceId)) return;
+            // Guard: don't create duplicate markers
+            if (armyMarkers.ContainsKey(army.armyId))
+            {
+                Debug.Log($"[CampaignMap3D] Marker already exists for '{army.armyName}', skipping");
+                return;
+            }
+            
+            if (!campaignManager.Provinces.ContainsKey(army.currentProvinceId))
+            {
+                Debug.LogError($"[CampaignMap3D] Province '{army.currentProvinceId}' NOT FOUND for army '{army.armyName}'");
+                return;
+            }
+            
             ProvinceData prov = campaignManager.Provinces[army.currentProvinceId];
+            Debug.Log($"[CampaignMap3D] Creating marker: army='{army.armyName}', province='{prov.provinceName}', mapPos={prov.mapPosition}");
+            
             Vector3 worldPos = MapToWorldPosition(prov.mapPosition);
-            worldPos.y = GetTerrainHeight(worldPos.x, worldPos.z) + 1.0f;
-            worldPos.x += 2.5f;
+            worldPos.y = GetTerrainHeight(worldPos.x, worldPos.z) + 5f;
+            worldPos.x += 150f; // Offset from city — far enough to not overlap city collider
+            
+            Debug.Log($"[CampaignMap3D] Marker world position: {worldPos}");
             
             GameObject armyGO = new GameObject($"Army_{army.armyName}");
             armyGO.transform.SetParent(armiesContainer.transform);
@@ -908,20 +932,21 @@ namespace NapoleonicWars.Campaign
             marker.OnArmyHoverStart += OnArmyMarkerHover;
             marker.OnArmyHoverEnd += OnArmyMarkerHoverEnd;
             armyMarkers[army.armyId] = marker;
+            
+            Debug.Log($"[CampaignMap3D] ✅ Marker CREATED for '{army.armyName}' at {worldPos}, total markers: {armyMarkers.Count}");
         }
         
         // ==================== ARMY INTERACTIONS ====================
         private void OnArmyMarkerSelected(ArmyData army)
         {
-            if (army.faction != campaignManager.PlayerFaction) return;
+            // Deselect previous
             if (selectedArmyMarker != null) selectedArmyMarker.SetSelected(false);
             if (armyMarkers.TryGetValue(army.armyId, out var m)) { selectedArmyMarker = m; m.SetSelected(true); }
             OnArmySelected?.Invoke(army);
-            OnArmyClicked?.Invoke(army);
-            if (army.movementPoints > 0) ShowMovementRange(army);
+            // NOTE: OnArmyClicked (opens panel) is NOT fired here — only on second click
         }
         
-        private void OnArmyMarkerHover(ArmyData army) => OnArmyClicked?.Invoke(army);
+        private void OnArmyMarkerHover(ArmyData army) { } // Hover does nothing
         private void OnArmyMarkerHoverEnd() { }
         
         public void ClearArmySelection()
@@ -961,25 +986,301 @@ namespace NapoleonicWars.Campaign
         private void UpdateArmyPositions()
         {
             if (campaignManager == null) return;
+            
+            HashSet<string> activeArmyIds = new HashSet<string>();
+            
             foreach (var kvp in campaignManager.Armies)
             {
                 ArmyData army = kvp.Value;
                 if (army == null) continue;
+                activeArmyIds.Add(army.armyId);
+                
                 if (armyMarkers.TryGetValue(army.armyId, out var marker))
                 {
-                    if (campaignManager.Provinces.ContainsKey(army.currentProvinceId))
+                    Vector3 targetPos;
+                    bool isMarching = false;
+                    Vector3 destPos = Vector3.zero;
+                    
+                    if (army.isMoving && army.targetWorldPosition != Vector3.zero)
                     {
-                        ProvinceData p = campaignManager.Provinces[army.currentProvinceId];
-                        Vector3 tp = MapToWorldPosition(p.mapPosition);
-                        tp.y = GetTerrainHeight(tp.x, tp.z) + 1.0f; tp.x += 2.5f;
-                        marker.UpdatePosition(tp);
+                        isMarching = true;
+                        destPos = army.targetWorldPosition;
+                        
+                        // Continuous movement at fixed speed (units per second)
+                        // Apply supply penalty: strained=-1, critical=-2, cutoff=-3
+                        float baseSpeed = 30f;
+                        SupplyStatus supplyStatus = SupplyLineSystem.GetArmySupplyStatus(army.armyId);
+                        float supplyPenalty = SupplyLineSystem.GetMovementModifier(supplyStatus);
+                        float moveSpeed = Mathf.Max(10f, baseSpeed + supplyPenalty * 5f);
+                        Vector3 currentPos = marker.transform.position;
+                        targetPos = Vector3.MoveTowards(currentPos, destPos, Time.deltaTime * moveSpeed);
+                        // Keep army at terrain height
+                        targetPos.y = GetTerrainHeight(targetPos.x, targetPos.z) + 5f;
+                        
+                        // Check if arrived
+                        float distRemaining = Vector3.Distance(new Vector3(targetPos.x, 0, targetPos.z), new Vector3(destPos.x, 0, destPos.z));
+                        if (distRemaining < 1f)
+                        {
+                            targetPos = destPos;
+                            targetPos.y = GetTerrainHeight(targetPos.x, targetPos.z) + 5f;
+                            army.isMoving = false;
+                            army.marchDaysRemaining = 0;
+                            army.marchDaysTotal = 0;
+                            army.targetWorldPosition = Vector3.zero;
+                            smoothMarchProgress.Remove(army.armyId);
+                            
+                            // Update currentProvinceId to nearest province
+                            Vector2 mp = WorldToMapPosition(destPos);
+                            string nearestProv = FindNearestProvince(mp);
+                            if (!string.IsNullOrEmpty(nearestProv))
+                            {
+                                army.currentProvinceId = nearestProv;
+                                Debug.Log($"[Movement] {army.armyName} arrived at nearest province: {nearestProv}");
+                            }
+                            
+                            // === COMBAT CHECK ON ARRIVAL (proximity-based) ===
+                            
+                            // 1) Check for enemy army nearby
+                            ArmyData enemyArmy = FindEnemyArmyNearPosition(destPos, army);
+                            if (enemyArmy != null)
+                            {
+                                string provId = army.currentProvinceId ?? nearestProv;
+                                ProvinceData battleProv = null;
+                                if (!string.IsNullOrEmpty(provId))
+                                    campaignManager.Provinces.TryGetValue(provId, out battleProv);
+                                    
+                                Debug.Log($"[Combat] ⚔ {army.armyName} engages {enemyArmy.armyName}!");
+                                OnBattleTriggered?.Invoke(army, enemyArmy, battleProv);
+                            }
+                            else
+                            {
+                                // 2) Check for enemy city nearby (siege)
+                                CityMapMarker nearestCity = FindNearbyCityMarker(destPos, 300f);
+                                if (nearestCity != null && nearestCity.ProvinceData != null 
+                                    && nearestCity.ProvinceData.owner != army.faction)
+                                {
+                                    ProvinceData siegeProv = nearestCity.ProvinceData;
+                                    
+                                    // Create garrison for the city
+                                    int garrisonSize = 40 + (siegeProv.population / 500);
+                                    ArmyData garrison = new ArmyData(
+                                        $"Garnison de {siegeProv.provinceName}",
+                                        $"garrison_{siegeProv.provinceId}_{Random.Range(1000,9999)}",
+                                        siegeProv.owner,
+                                        siegeProv.provinceId
+                                    );
+                                    var garrisonReg = new RegimentData(
+                                        $"Garnison de {siegeProv.provinceName}",
+                                        UnitType.Militia,
+                                        garrisonSize
+                                    );
+                                    garrisonReg.experience = 5f;
+                                    garrison.regiments.Add(garrisonReg);
+                                    
+                                    Debug.Log($"[Siege] 🏰 {army.armyName} lays siege to {siegeProv.provinceName} ({siegeProv.owner})!");
+                                    OnBattleTriggered?.Invoke(army, garrison, siegeProv);
+                                }
+                            }
+                            
+                            isMarching = false;
+                        }
+                    }
+                    else if (campaignManager.Provinces.ContainsKey(army.currentProvinceId))
+                    {
+                        // Stationary: stay at current position (don't snap to province center)
+                        targetPos = marker.transform.position;
+                        
+                        // If marker hasn't been positioned yet, use province center
+                        if (targetPos == Vector3.zero)
+                        {
+                            ProvinceData p = campaignManager.Provinces[army.currentProvinceId];
+                            targetPos = MapToWorldPosition(p.mapPosition);
+                            targetPos.y = GetTerrainHeight(targetPos.x, targetPos.z) + 5f;
+                            targetPos.x += 150f;
+                        }
+                        
+                        smoothMarchProgress.Remove(army.armyId);
+                    }
+                    else continue;
+                    
+                    // Apply position
+                    marker.UpdatePosition(targetPos);
+                    
+                    // === MOVEMENT ARROW ===
+                    if (isMarching)
+                    {
+                        UpdateMovementArrow(army.armyId, marker.transform.position, destPos, army.marchDaysRemaining);
+                    }
+                    else
+                    {
+                        RemoveMovementArrow(army.armyId);
                     }
                 }
                 else
                 {
+                    Debug.Log($"[CampaignMap3D] Creating NEW marker for army '{army.armyName}' ({army.armyId}) in province {army.currentProvinceId} with {army.regiments.Count} regiments");
                     try { CreateArmyMarker(army); }
-                    catch (System.Exception e) { Debug.LogError($"[CampaignMap3D] Army marker error: {e.Message}"); }
+                    catch (System.Exception e) { Debug.LogError($"[CampaignMap3D] Army marker error for '{army.armyName}': {e}"); }
                 }
+            }
+            
+            // Clean up arrows for destroyed armies
+            var arrowKeys = new List<string>(movementArrows.Keys);
+            foreach (var key in arrowKeys)
+            {
+                if (!activeArmyIds.Contains(key))
+                    RemoveMovementArrow(key);
+            }
+            
+            // === SUPPLY WAGON UPDATES ===
+            SupplyWagonSystem.UpdateWagons(campaignManager.Armies, armyMarkers, Time.deltaTime);
+            SupplyWagonSystem.CheckCaptures(campaignManager.Armies, armyMarkers);
+            UpdateWagonVisuals();
+        }
+        
+        /// <summary>
+        /// Update supply wagon visuals on map — create/move/remove wagon GameObjects.
+        /// </summary>
+        private void UpdateWagonVisuals()
+        {
+            if (wagonsContainer == null)
+            {
+                wagonsContainer = new GameObject("WagonsContainer");
+                wagonsContainer.transform.SetParent(transform);
+            }
+            
+            var activeWagons = SupplyWagonSystem.GetAllWagons();
+            var activeWagonIds = new HashSet<string>();
+            
+            foreach (var wagon in activeWagons)
+            {
+                if (!wagon.isActive) continue;
+                activeWagonIds.Add(wagon.wagonId);
+                
+                if (!wagonMarkers.TryGetValue(wagon.wagonId, out var markerGO) || markerGO == null)
+                {
+                    // Create wagon visual
+                    markerGO = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    markerGO.name = $"Wagon_{wagon.wagonId}";
+                    markerGO.transform.SetParent(wagonsContainer.transform);
+                    markerGO.transform.localScale = new Vector3(25f, 15f, 40f); // Rectangular cart shape
+                    
+                    // Brown color for wooden wagon
+                    var rend = markerGO.GetComponent<Renderer>();
+                    if (rend != null)
+                    {
+                        var mat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+                        mat.color = new Color(0.55f, 0.35f, 0.15f); // Dark wood brown
+                        rend.material = mat;
+                    }
+                    
+                    // Add a small flag on top (faction color)
+                    var flag = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    flag.name = "Flag";
+                    flag.transform.SetParent(markerGO.transform);
+                    flag.transform.localPosition = new Vector3(0f, 1.5f, 0f);
+                    flag.transform.localScale = new Vector3(0.3f, 0.6f, 0.05f);
+                    Destroy(flag.GetComponent<Collider>());
+                    var flagRend = flag.GetComponent<Renderer>();
+                    if (flagRend != null)
+                    {
+                        var flagMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+                        flagMat.color = GetFactionColor(wagon.owner);
+                        flagRend.material = flagMat;
+                    }
+                    
+                    wagonMarkers[wagon.wagonId] = markerGO;
+                }
+                
+                // Update position
+                Vector3 pos = wagon.currentWorldPosition;
+                pos.y = GetTerrainHeight(pos.x, pos.z) + 8f;
+                markerGO.transform.position = pos;
+                
+                // Face toward target
+                if (wagon.targetWorldPosition != Vector3.zero)
+                {
+                    Vector3 dir = wagon.targetWorldPosition - pos;
+                    dir.y = 0;
+                    if (dir.sqrMagnitude > 1f)
+                        markerGO.transform.rotation = Quaternion.LookRotation(dir);
+                }
+            }
+            
+            // Remove dead wagon markers
+            var deadKeys = new List<string>();
+            foreach (var kvp in wagonMarkers)
+            {
+                if (!activeWagonIds.Contains(kvp.Key))
+                {
+                    if (kvp.Value != null) Destroy(kvp.Value);
+                    deadKeys.Add(kvp.Key);
+                }
+            }
+            foreach (var key in deadKeys)
+                wagonMarkers.Remove(key);
+        }
+        
+        private void UpdateMovementArrow(string armyId, Vector3 from, Vector3 to, int daysRemaining)
+        {
+            if (!movementArrows.TryGetValue(armyId, out var arrow))
+            {
+                // Create line
+                GameObject lineObj = new GameObject($"MoveArrow_{armyId}");
+                lineObj.transform.SetParent(transform);
+                LineRenderer lr = lineObj.AddComponent<LineRenderer>();
+                lr.positionCount = 2;
+                lr.startWidth = 8f;
+                lr.endWidth = 3f;
+                lr.startColor = new Color(1f, 0.85f, 0.2f, 0.7f);
+                lr.endColor = new Color(1f, 0.5f, 0.1f, 0.9f);
+                lr.material = new Material(Shader.Find("Sprites/Default"));
+                lr.sortingOrder = 10;
+                lr.useWorldSpace = true;
+                
+                // Create label
+                GameObject labelObj = new GameObject($"MoveLabel_{armyId}");
+                labelObj.transform.SetParent(transform);
+                
+                // Use world-space TextMesh for 3D label
+                TextMesh tm = labelObj.AddComponent<TextMesh>();
+                tm.fontSize = 80;
+                tm.characterSize = 2f;
+                tm.anchor = TextAnchor.MiddleCenter;
+                tm.alignment = TextAlignment.Center;
+                tm.color = new Color(1f, 0.95f, 0.7f);
+                tm.fontStyle = FontStyle.Bold;
+                
+                arrow = (lineObj, labelObj);
+                movementArrows[armyId] = arrow;
+            }
+            
+            // Update line positions
+            LineRenderer line = arrow.line.GetComponent<LineRenderer>();
+            Vector3 fromLifted = from + Vector3.up * 15f;
+            Vector3 toLifted = to + Vector3.up * 15f;
+            line.SetPosition(0, fromLifted);
+            line.SetPosition(1, toLifted);
+            
+            // Update label position and text
+            Vector3 midPoint = (fromLifted + toLifted) * 0.5f + Vector3.up * 25f;
+            arrow.label.transform.position = midPoint;
+            
+            // Face camera
+            if (mainCamera != null)
+                arrow.label.transform.rotation = Quaternion.LookRotation(arrow.label.transform.position - mainCamera.transform.position);
+            
+            TextMesh text = arrow.label.GetComponent<TextMesh>();
+            text.text = daysRemaining <= 0 ? "Arriving" : $"⏱ {daysRemaining}j";
+        }
+        
+        private void RemoveMovementArrow(string armyId)
+        {
+            if (movementArrows.TryGetValue(armyId, out var arrow))
+            {
+                if (arrow.line != null) Destroy(arrow.line);
+                if (arrow.label != null) Destroy(arrow.label);
+                movementArrows.Remove(armyId);
             }
         }
         
@@ -989,58 +1290,134 @@ namespace NapoleonicWars.Campaign
             if (mainCamera == null || campaignManager == null) return;
             // Don't process map clicks when mouse is over UI (prevents click-through to map)
             if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return;
+            
+            // LEFT CLICK — select army or open city panel
             if (Input.GetMouseButtonDown(0))
             {
                 Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
-                if (Physics.Raycast(ray, out RaycastHit hit, 15000f))
+                RaycastHit[] hits = Physics.RaycastAll(ray, 15000f);
+                
+                // Priority 1: check ALL hits for army markers
+                foreach (var h in hits)
                 {
-                    ArmyMapMarker am = hit.collider.GetComponent<ArmyMapMarker>();
-                    if (am != null) return;
-                    CityMapMarker cm = hit.collider.GetComponent<CityMapMarker>();
-                    if (cm != null)
+                    ArmyMapMarker am = h.collider.GetComponentInParent<ArmyMapMarker>();
+                    if (am != null && am.ArmyData != null)
                     {
-                        if (selectedArmyMarker != null) TryMoveSelectedArmy(cm.ProvinceData);
-                        else OnCityClicked?.Invoke(cm.ProvinceData);
+                        // If clicking the SAME already-selected army → open panel
+                        if (selectedArmyMarker == am)
+                        {
+                            Debug.Log($"[CampaignMap3D] Double-click army: '{am.ArmyData.armyName}' → opening panel");
+                            OnArmyClicked?.Invoke(am.ArmyData);
+                        }
+                        else
+                        {
+                            // First click → just select (highlight)
+                            Debug.Log($"[CampaignMap3D] Army selected: '{am.ArmyData.armyName}'");
+                            OnArmyMarkerSelected(am.ArmyData);
+                        }
                         return;
                     }
                 }
+                
+                // Priority 2: check ALL hits for city markers
+                foreach (var h in hits)
+                {
+                    CityMapMarker cm = h.collider.GetComponent<CityMapMarker>();
+                    if (cm != null)
+                    {
+                        ClearArmySelection();
+                        OnCityClicked?.Invoke(cm.ProvinceData);
+                        return;
+                    }
+                }
+                
+                // Priority 3: clicked empty terrain → deselect
                 ClearArmySelection();
             }
-            if (Input.GetMouseButtonDown(1) && selectedArmyMarker != null)
+            
+            // RIGHT CLICK — move/attack with selected army
+            if (Input.GetMouseButtonDown(1))
             {
-                Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
-                if (Physics.Raycast(ray, out RaycastHit hit, 15000f))
+                if (selectedArmyMarker == null)
                 {
-                    Vector2 mp = WorldToMapPosition(hit.point);
-                    string np = FindNearestProvince(mp);
-                    if (!string.IsNullOrEmpty(np) && campaignManager.Provinces.TryGetValue(np, out var prov))
-                        TryMoveSelectedArmy(prov);
+                    Debug.Log("[Input] Right-click but no army selected");
+                    return;
                 }
+                
+                Ray ray = mainCamera.ScreenPointToRay(Input.mousePosition);
+                RaycastHit[] hits = Physics.RaycastAll(ray, 50000f);
+                
+                Debug.Log($"[Input] Right-click with army '{selectedArmyMarker.ArmyData?.armyName}' — {hits.Length} raycast hits");
+                for (int i = 0; i < hits.Length; i++)
+                    Debug.Log($"[Input]   Hit[{i}]: '{hits[i].collider.gameObject.name}' at {hits[i].point}, dist={hits[i].distance:F0}");
+                
+                // PRIORITY 1: Check for enemy army marker hit → attack
+                foreach (var h in hits)
+                {
+                    ArmyMapMarker targetArmyMarker = h.collider.GetComponentInParent<ArmyMapMarker>();
+                    if (targetArmyMarker != null && targetArmyMarker != selectedArmyMarker)
+                    {
+                        ArmyData targetArmy = targetArmyMarker.ArmyData;
+                        ArmyData myArmy = selectedArmyMarker.ArmyData;
+                        if (targetArmy != null && myArmy != null && targetArmy.faction != myArmy.faction)
+                        {
+                            Debug.Log($"[Input] Right-click on ENEMY army: {targetArmy.armyName} ({targetArmy.faction})");
+                            TryMoveSelectedArmyToPosition(targetArmyMarker.transform.position);
+                            return;
+                        }
+                    }
+                }
+                
+                // PRIORITY 2: Check for city marker hit → move to city (siege if enemy)
+                foreach (var h in hits)
+                {
+                    CityMapMarker cm = h.collider.GetComponent<CityMapMarker>();
+                    if (cm != null)
+                    {
+                        Debug.Log($"[Input] Right-click on city: {cm.ProvinceData?.provinceName}");
+                        TryMoveSelectedArmyToPosition(h.point);
+                        return;
+                    }
+                }
+                
+                // PRIORITY 3: Terrain click → free movement
+                foreach (var h in hits)
+                {
+                    // Skip army marker colliders
+                    if (h.collider.GetComponentInParent<ArmyMapMarker>() != null) continue;
+                    
+                    // Free movement: use the exact hit point as target
+                    Vector3 targetWorldPos = h.point;
+                    Debug.Log($"[Input] Right-click terrain at world({targetWorldPos.x:F0},{targetWorldPos.y:F0},{targetWorldPos.z:F0})");
+                    TryMoveSelectedArmyToPosition(targetWorldPos);
+                    return;
+                }
+                Debug.LogWarning("[Input] Right-click: no valid terrain hit found");
             }
         }
         
-        private void TryMoveSelectedArmy(ProvinceData targetProvince)
+        private void TryMoveSelectedArmyToPosition(Vector3 targetWorldPos)
         {
-            if (selectedArmyMarker == null) return;
+            if (selectedArmyMarker == null) { Debug.LogWarning("[TryMove] No marker selected"); return; }
             ArmyData army = selectedArmyMarker.ArmyData;
-            if (army == null || !campaignManager.Provinces.ContainsKey(army.currentProvinceId)) return;
+            if (army == null) { Debug.LogWarning("[TryMove] ArmyData is null on marker"); return; }
             
-            ProvinceData cur = campaignManager.Provinces[army.currentProvinceId];
-            bool isNeighbor = false;
-            foreach (string nid in cur.neighborIds) { if (nid == targetProvince.provinceId) { isNeighbor = true; break; } }
-            if (!isNeighbor || army.movementPoints <= 0) return;
+            if (army.faction != campaignManager.PlayerFaction)
+            {
+                Debug.LogWarning($"[TryMove] BLOCKED — {army.armyName} is {army.faction}, not player faction");
+                return;
+            }
+
+            Vector3 currentWorldPos = selectedArmyMarker.transform.position;
             
-            ArmyData enemy = FindEnemyArmyInProvince(targetProvince.provinceId, army.faction);
-            bool isEnemyCity = targetProvince.owner != army.faction;
-            int fortLevel = 0;
-            if (isEnemyCity) { CityData city = campaignManager.GetCityForProvince(targetProvince.provinceId); if (city != null) fortLevel = city.GetFortificationLevel(); }
-            
-            bool moved = campaignManager.MoveArmy(army.armyId, targetProvince.provinceId);
+            bool moved = campaignManager.MoveArmyToPosition(army.armyId, targetWorldPos, currentWorldPos);
             if (moved)
             {
-                ClearArmySelection();
-                if (enemy != null || (isEnemyCity && fortLevel > 0)) OnBattleTriggered?.Invoke(army, enemy, targetProvince);
-                OnArmyMoveOrdered?.Invoke(army, targetProvince);
+                Debug.Log($"[TryMove] ✅ {army.armyName} moving to world position ({army.marchDaysRemaining} days)");
+            }
+            else
+            {
+                Debug.LogWarning($"[TryMove] ❌ FAILED — MoveArmyToPosition returned false");
             }
         }
         
@@ -1057,9 +1434,68 @@ namespace NapoleonicWars.Campaign
             foreach (var kvp in campaignManager.Provinces)
             {
                 float d = Vector2.Distance(mapPos, kvp.Value.mapPosition);
-                if (d < bestD && d < 0.05f) { bestD = d; best = kvp.Key; }
+                if (d < bestD) { bestD = d; best = kvp.Key; }
             }
             return best;
+        }
+        
+        /// <summary>
+        /// Find the closest enemy army near a world position (within detection radius).
+        /// Returns null if no enemy army found nearby.
+        /// </summary>
+        private ArmyData FindEnemyArmyNearPosition(Vector3 worldPos, ArmyData movingArmy)
+        {
+            float detectionRadius = 200f; // World units
+            ArmyData closest = null;
+            float closestDist = detectionRadius;
+            
+            foreach (var kvp in armyMarkers)
+            {
+                ArmyMapMarker marker = kvp.Value;
+                if (marker == null || marker.ArmyData == null) continue;
+                ArmyData other = marker.ArmyData;
+                
+                // Skip same faction
+                if (other.faction == movingArmy.faction) continue;
+                // Skip same army
+                if (other.armyId == movingArmy.armyId) continue;
+                
+                float dist = Vector3.Distance(
+                    new Vector3(worldPos.x, 0, worldPos.z),
+                    new Vector3(marker.transform.position.x, 0, marker.transform.position.z));
+                    
+                if (dist < closestDist)
+                {
+                    closestDist = dist;
+                    closest = other;
+                }
+            }
+            return closest;
+        }
+        
+        /// <summary>
+        /// Find the closest city marker near a world position (within radius).
+        /// Returns null if no city found nearby.
+        /// </summary>
+        private CityMapMarker FindNearbyCityMarker(Vector3 worldPos, float radius)
+        {
+            CityMapMarker closest = null;
+            float closestDist = radius;
+            
+            var allCities = FindObjectsByType<CityMapMarker>(FindObjectsSortMode.None);
+            foreach (var city in allCities)
+            {
+                if (city == null) continue;
+                float dist = Vector3.Distance(
+                    new Vector3(worldPos.x, 0, worldPos.z),
+                    new Vector3(city.transform.position.x, 0, city.transform.position.z));
+                if (dist < closestDist)
+                {
+                    closestDist = dist;
+                    closest = city;
+                }
+            }
+            return closest;
         }
         
         // ==================== POSITIONING ====================
