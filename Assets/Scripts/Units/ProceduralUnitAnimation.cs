@@ -10,6 +10,7 @@ namespace NapoleonicWars.Units
     {
         Idle,
         Walking,
+        WalkingUnarmed, // Officer walk — arms relaxed, no weapon bob
         Sprinting,      // Charge / flee
         Kneeling,       // Volley fire kneel
         KneelingFire,   // Firing while kneeling
@@ -341,6 +342,10 @@ namespace NapoleonicWars.Units
                 case ProceduralAnimState.Walking:
                     CalculateWalkRoot(t, walkBobAmp, walkBobSpeed, walkLeanAngle, walkSwayAmp, out pos, out rot);
                     break;
+                case ProceduralAnimState.WalkingUnarmed:
+                    // Officer walk: same rhythm but reduced bob (relaxed stride, no weapon weight)
+                    CalculateWalkRoot(t, walkBobAmp * 0.6f, walkBobSpeed, walkLeanAngle * 0.5f, walkSwayAmp * 0.7f, out pos, out rot);
+                    break;
                 case ProceduralAnimState.Sprinting:
                     CalculateWalkRoot(t, sprintBobAmp, sprintBobSpeed, sprintLeanAngle, sprintSwayAmp, out pos, out rot);
                     break;
@@ -392,6 +397,10 @@ namespace NapoleonicWars.Units
                     break;
                 case ProceduralAnimState.Walking:
                     PoseWalk(t, walkBobSpeed);
+                    break;
+                case ProceduralAnimState.WalkingUnarmed:
+                    // Officer: arms relaxed at sides while walking, not holding weapon
+                    PoseWalkUnarmed(t, walkBobSpeed);
                     break;
                 case ProceduralAnimState.Sprinting:
                     PoseWalk(t, sprintBobSpeed * 1.3f);
@@ -484,6 +493,46 @@ namespace NapoleonicWars.Units
             // Head looks straight
             if (head != null)
                 SetBonePose(head, Quaternion.Euler(0f, 0f, 0f));
+        }
+
+        /// <summary>
+        /// WALK UNARMED: Officer walk — arms swing naturally at sides, no weapon.
+        /// More relaxed than soldier walk, arms hang lower.
+        /// </summary>
+        private void PoseWalkUnarmed(float t, float speed)
+        {
+            float p = t * speed * speedMultiplier * Mathf.PI * 2f;
+            float swing = Mathf.Sin(p);
+
+            // Arms swing naturally at sides — more relaxed, arms hang lower than soldier walk
+            float armSwingAngle = swing * 18f; // Smaller swing than armed walk
+            SetBonePose(leftUpperArm, Quaternion.Euler(armSwingAngle, 0f, 68f));   // Arms more down
+            SetBonePose(rightUpperArm, Quaternion.Euler(-armSwingAngle, 0f, -68f));
+
+            // Slight forearm bend — natural relaxed arms
+            float leftBend = Mathf.Max(0f, swing) * 12f;
+            float rightBend = Mathf.Max(0f, -swing) * 12f;
+            SetBonePose(leftLowerArm, Quaternion.Euler(0f, -leftBend, 5f));
+            SetBonePose(rightLowerArm, Quaternion.Euler(0f, rightBend, -5f));
+
+            // Leg swing — same as regular walk
+            float legSwing = swing * 20f;
+            SetBonePose(leftUpperLeg, Quaternion.Euler(-legSwing, 0f, 0f));
+            SetBonePose(rightUpperLeg, Quaternion.Euler(legSwing, 0f, 0f));
+
+            float leftKnee = Mathf.Max(0f, -swing) * 30f;
+            float rightKnee = Mathf.Max(0f, swing) * 30f;
+            SetBonePose(leftLowerLeg, Quaternion.Euler(leftKnee, 0f, 0f));
+            SetBonePose(rightLowerLeg, Quaternion.Euler(rightKnee, 0f, 0f));
+
+            // Spine: officer walks more upright, slight confident twist
+            if (spine1 != null)
+                SetBonePose(spine1, Quaternion.Euler(-2f, swing * 4f, 0f));
+
+            // Head: officer looks around more (surveying the field)
+            float look = Mathf.Sin(t * 0.5f * Mathf.PI * 2f + phase3) * 8f;
+            if (head != null)
+                SetBonePose(head, Quaternion.Euler(-3f, look, 0f));
         }
 
         /// <summary>

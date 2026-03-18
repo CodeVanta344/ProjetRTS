@@ -270,8 +270,7 @@ namespace NapoleonicWars.Units
 
             if (ctrl != null)
                 Debug.Log($"[UnitModelLoader] Loaded animator: {key}");
-            else
-                Debug.LogWarning($"[UnitModelLoader] No animator controller found for: {key}");
+            // No warning if null — units will use ProceduralUnitAnimation as fallback
 
             return ctrl;
         }

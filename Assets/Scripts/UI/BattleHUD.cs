@@ -22,9 +22,9 @@ namespace NapoleonicWars.UI
 
         // Command buttons
         private GameObject commandPanel;
-        private Button btnVolley, btnCharge, btnRally, btnCover;
-        private Text volleyLabel, chargeLabel, rallyLabel, coverLabel;
-        private GameObject volleyGO, chargeGO, rallyGO, coverGO;
+        private Button btnVolley, btnCharge, btnRally, btnCover, btnLimber;
+        private Text volleyLabel, chargeLabel, rallyLabel, coverLabel, limberLabel;
+        private GameObject volleyGO, chargeGO, rallyGO, coverGO, limberGO;
         private float rallyCooldown;
 
         // Deployment panel
@@ -158,16 +158,19 @@ namespace NapoleonicWars.UI
             btnCharge = UIFactory.CreateButton(inner, "BtnCharge", "CHARGE [C]", 11);
             btnRally = UIFactory.CreateButton(inner, "BtnRally", "RALLY [R]", 11, OnRallyClicked);
             btnCover = UIFactory.CreateButton(inner, "BtnCover", "COVER [T]", 11, OnCoverClicked);
+            btnLimber = UIFactory.CreateButton(inner, "BtnLimber", "LIMBER [L]", 11, OnLimberClicked);
 
             volleyGO = btnVolley.gameObject;
             chargeGO = btnCharge.gameObject;
             rallyGO = btnRally.gameObject;
             coverGO = btnCover.gameObject;
+            limberGO = btnLimber.gameObject;
 
             volleyLabel = btnVolley.GetComponentInChildren<Text>();
             chargeLabel = btnCharge.GetComponentInChildren<Text>();
             rallyLabel = btnRally.GetComponentInChildren<Text>();
             coverLabel = btnCover.GetComponentInChildren<Text>();
+            limberLabel = btnLimber.GetComponentInChildren<Text>();
 
             commandPanel.SetActive(false);
         }
@@ -416,6 +419,18 @@ namespace NapoleonicWars.UI
             else
             {
                 Debug.LogWarning("[BattleHUD] CoverPositioning system not available");
+            }
+        }
+
+        private void OnLimberClicked()
+        {
+            if (SelectionManager.Instance == null) return;
+            foreach (var reg in SelectionManager.Instance.SelectedRegiments)
+            {
+                if (reg != null && reg.IsArtillery)
+                {
+                    reg.ToggleLimber();
+                }
             }
         }
 
@@ -717,6 +732,118 @@ namespace NapoleonicWars.UI
                         hpImg.color = newColor;
                 }
             }
+
+            // === SUPPRESSION INDICATOR ===
+            Transform suppressionBar = card.transform.Find("SuppressionBg/SuppressionFill");
+            if (suppressionBar == null)
+            {
+                // Create suppression bar if it doesn't exist (below health bar)
+                Transform hpBg = card.transform.Find("HpBg");
+                if (hpBg != null)
+                {
+                    GameObject suppBg = new GameObject("SuppressionBg");
+                    suppBg.transform.SetParent(card.transform, false);
+                    RectTransform suppBgRT = suppBg.AddComponent<RectTransform>();
+                    suppBgRT.anchorMin = new Vector2(0.05f, 0.12f);
+                    suppBgRT.anchorMax = new Vector2(0.95f, 0.18f);
+                    suppBgRT.offsetMin = Vector2.zero;
+                    suppBgRT.offsetMax = Vector2.zero;
+                    Image suppBgImg = suppBg.AddComponent<Image>();
+                    suppBgImg.color = new Color(0.15f, 0.15f, 0.15f, 0.6f);
+
+                    GameObject suppFillObj = new GameObject("SuppressionFill");
+                    suppFillObj.transform.SetParent(suppBg.transform, false);
+                    RectTransform suppFillRT = suppFillObj.AddComponent<RectTransform>();
+                    suppFillRT.anchorMin = Vector2.zero;
+                    suppFillRT.anchorMax = new Vector2(0f, 1f);
+                    suppFillRT.offsetMin = Vector2.zero;
+                    suppFillRT.offsetMax = Vector2.zero;
+                    Image suppFillImg = suppFillObj.AddComponent<Image>();
+                    suppFillImg.color = new Color(0.9f, 0.3f, 0.1f, 0.8f); // Red-orange for suppression
+
+                    suppressionBar = suppFillObj.transform;
+                }
+            }
+            if (suppressionBar != null)
+            {
+                RectTransform suppRT = suppressionBar.GetComponent<RectTransform>();
+                float suppPercent = reg.CachedAverageSuppression / 100f;
+                suppRT.anchorMax = new Vector2(Mathf.Clamp01(suppPercent), 1f);
+                // Only show if there's meaningful suppression
+                suppressionBar.parent.gameObject.SetActive(suppPercent > 0.05f);
+            }
+
+            // === AMMO INDICATOR ===
+            Transform ammoText = card.transform.Find("AmmoText");
+            if (ammoText == null)
+            {
+                GameObject ammoObj = new GameObject("AmmoText");
+                ammoObj.transform.SetParent(card.transform, false);
+                RectTransform ammoRT = ammoObj.AddComponent<RectTransform>();
+                ammoRT.anchorMin = new Vector2(0.6f, 0.82f);
+                ammoRT.anchorMax = new Vector2(0.98f, 0.98f);
+                ammoRT.offsetMin = Vector2.zero;
+                ammoRT.offsetMax = Vector2.zero;
+                Text ammoTxt = ammoObj.AddComponent<Text>();
+                ammoTxt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                ammoTxt.fontSize = 9;
+                ammoTxt.alignment = TextAnchor.UpperRight;
+                ammoTxt.color = Color.white;
+                ammoText = ammoObj.transform;
+            }
+            {
+                Text ammoTxt = ammoText.GetComponent<Text>();
+                if (reg.UnitData != null && !reg.UnitData.hasUnlimitedAmmo)
+                {
+                    int totalAmmo = reg.CachedTotalAmmo;
+                    int maxAmmo = reg.Units.Count * reg.UnitData.maxAmmo;
+                    float ammoPercent = maxAmmo > 0 ? (float)totalAmmo / maxAmmo : 0f;
+
+                    Color ammoColor;
+                    if (ammoPercent > 0.5f) ammoColor = Color.white;
+                    else if (ammoPercent > 0.2f) ammoColor = new Color(1f, 0.8f, 0.2f);
+                    else ammoColor = new Color(1f, 0.3f, 0.2f);
+
+                    ammoTxt.color = ammoColor;
+                    ammoTxt.text = totalAmmo <= 0 ? "NO AMMO" : $"{Mathf.RoundToInt(ammoPercent * 100)}%";
+                }
+                else
+                {
+                    ammoTxt.text = "";
+                }
+            }
+
+            // === LIMBER INDICATOR (Artillery only) ===
+            Transform limberText = card.transform.Find("LimberText");
+            if (limberText == null && reg.IsArtillery)
+            {
+                GameObject limberObj = new GameObject("LimberText");
+                limberObj.transform.SetParent(card.transform, false);
+                RectTransform limberRT = limberObj.AddComponent<RectTransform>();
+                limberRT.anchorMin = new Vector2(0.02f, 0.82f);
+                limberRT.anchorMax = new Vector2(0.5f, 0.98f);
+                limberRT.offsetMin = Vector2.zero;
+                limberRT.offsetMax = Vector2.zero;
+                Text limberTxt = limberObj.AddComponent<Text>();
+                limberTxt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                limberTxt.fontSize = 8;
+                limberTxt.alignment = TextAnchor.UpperLeft;
+                limberText = limberObj.transform;
+            }
+            if (limberText != null && reg.IsArtillery)
+            {
+                Text limberTxt = limberText.GetComponent<Text>();
+                if (reg.IsTransitioningLimber)
+                {
+                    limberTxt.text = reg.IsLimbered ? "UNLIMBERING..." : "LIMBERING...";
+                    limberTxt.color = new Color(1f, 0.8f, 0.2f);
+                }
+                else
+                {
+                    limberTxt.text = reg.IsLimbered ? "LIMBERED" : "DEPLOYED";
+                    limberTxt.color = reg.IsLimbered ? new Color(0.5f, 0.8f, 1f) : new Color(0.3f, 1f, 0.3f);
+                }
+            }
         }
 
         private string GetUnitSpriteName(Regiment reg)
@@ -882,6 +1009,33 @@ namespace NapoleonicWars.UI
 
             // Rally hotkey
             if (Input.GetKeyDown(KeyCode.R)) OnRallyClicked();
+            // Limber hotkey
+            if (Input.GetKeyDown(KeyCode.L)) OnLimberClicked();
+
+            // Show/hide limber button based on selected regiment type
+            if (limberGO != null)
+            {
+                bool hasArtillery = false;
+                if (SelectionManager.Instance != null)
+                {
+                    foreach (var reg in SelectionManager.Instance.SelectedRegiments)
+                    {
+                        if (reg != null && reg.IsArtillery) { hasArtillery = true; break; }
+                    }
+                }
+                limberGO.SetActive(hasArtillery);
+                if (hasArtillery && limberLabel != null && SelectionManager.Instance != null)
+                {
+                    foreach (var reg in SelectionManager.Instance.SelectedRegiments)
+                    {
+                        if (reg != null && reg.IsArtillery)
+                        {
+                            limberLabel.text = reg.IsLimbered ? "UNLIMBER [L]" : "LIMBER [L]";
+                            break;
+                        }
+                    }
+                }
+            }
 
             // Keyboard shortcuts: 1-4 for speed
             if (Input.GetKeyDown(KeyCode.Alpha1)) SetSpeed(0.5f);

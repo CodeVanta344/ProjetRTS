@@ -156,7 +156,7 @@ namespace NapoleonicWars.Units
 
                 case UnitState.Moving:
                     proceduralAnim.SetSpeedMultiplier(1f);
-                    proceduralAnim.SetState(ProceduralAnimState.Walking);
+                    proceduralAnim.SetState(unit.IsOfficer ? ProceduralAnimState.WalkingUnarmed : ProceduralAnimState.Walking);
                     break;
 
                 case UnitState.Charging:
@@ -184,6 +184,12 @@ namespace NapoleonicWars.Units
                         proceduralAnim.SetState(ProceduralAnimState.Sprinting);
                         proceduralAnim.TriggerFire(); // Reuse recoil as "strike" motion
                     }
+                    break;
+
+                case UnitState.Retreating:
+                    // Orderly retreat: walking speed, not panicked sprint
+                    proceduralAnim.SetSpeedMultiplier(1.2f);
+                    proceduralAnim.SetState(unit.IsOfficer ? ProceduralAnimState.WalkingUnarmed : ProceduralAnimState.Walking);
                     break;
 
                 case UnitState.Fleeing:
@@ -217,18 +223,24 @@ namespace NapoleonicWars.Units
                     break;
 
                 case UnitState.Moving:
-                    PlayAnim("walk");
+                    PlayAnim(unit.IsOfficer ? "WALK_unarmed" : "walk");
                     break;
 
                 case UnitState.Charging:
-                    PlayAnim("charge");
+                    PlayAnim(unit.IsOfficer ? "WALK_unarmed" : "charge");
                     break;
 
                 case UnitState.Attacking:
-                    if (isRanged)
+                    if (unit.IsOfficer)
+                        PlayAnim("idle"); // Officers don't fire, they command
+                    else if (isRanged)
                         PlayAnim(shouldBeKneeling ? "kneeling_fire" : "standing_fire");
                     else
                         PlayAnim("attack_melee");
+                    break;
+
+                case UnitState.Retreating:
+                    PlayAnim(unit.IsOfficer ? "WALK_unarmed" : "walk");
                     break;
 
                 case UnitState.Fleeing:

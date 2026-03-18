@@ -250,7 +250,8 @@ namespace NapoleonicWars.AI
             switch (CurrentPhase)
             {
                 case BattlePhase.Opening:
-                    // Skirmishers push forward, main line advances in column
+                    // Position forces on advantageous terrain during opening
+                    PositionForcesOnTerrain(playerRegiments);
                     break;
 
                 case BattlePhase.Engagement:
@@ -344,6 +345,152 @@ namespace NapoleonicWars.AI
             foreach (var r in regiments)
                 if (r != null) total += r.Units.Count;
             return total;
+        }
+
+        // ================================================================
+        // TERRAIN AWARENESS
+        // ================================================================
+
+        /// <summary>
+        /// Scans the battlefield for high ground positions and returns the best
+        /// deployment position for a regiment based on its role.
+        /// </summary>
+        public Vector3 FindBestTerrainPosition(Regiment regiment, List<Regiment> playerRegiments)
+        {
+            if (regiment == null) return Vector3.zero;
+
+            Vector3 currentPos = regiment.transform.position;
+            Vector3 bestPos = currentPos;
+            float bestScore = EvaluateTerrainScore(currentPos, regiment, playerRegiments);
+
+            // Sample positions in a grid around the current position
+            float searchRadius = 80f;
+            float step = 20f;
+
+            for (float dx = -searchRadius; dx <= searchRadius; dx += step)
+            {
+                for (float dz = -searchRadius; dz <= searchRadius; dz += step)
+                {
+                    Vector3 candidate = currentPos + new Vector3(dx, 0f, dz);
+                    candidate.y = BattleManager.GetTerrainHeight(candidate);
+
+                    float score = EvaluateTerrainScore(candidate, regiment, playerRegiments);
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        bestPos = candidate;
+                    }
+                }
+            }
+
+            return bestPos;
+        }
+
+        /// <summary>
+        /// Scores a position for a regiment. Higher = better.
+        /// Factors: height advantage, distance to enemy, terrain type.
+        /// </summary>
+        private float EvaluateTerrainScore(Vector3 position, Regiment regiment, List<Regiment> playerRegiments)
+        {
+            float score = 0f;
+
+            // Height advantage is very valuable
+            float height = position.y;
+            score += height * 2f; // 2 points per meter of elevation
+
+            // Get average enemy position
+            Vector3 enemyCenter = Vector3.zero;
+            int enemyCount = 0;
+            if (playerRegiments != null)
+            {
+                foreach (var r in playerRegiments)
+                {
+                    if (r != null && r.CachedAliveCount > 0)
+                    {
+                        enemyCenter += r.transform.position;
+                        enemyCount++;
+                    }
+                }
+            }
+            if (enemyCount > 0) enemyCenter /= enemyCount;
+
+            float distToEnemy = Vector3.Distance(position, enemyCenter);
+
+            // Artillery prefers high ground at range
+            if (regiment.IsArtillery)
+            {
+                score += height * 3f; // Extra height bonus for artillery
+                // Prefer positions at medium-long range (100-200m)
+                if (distToEnemy > 80f && distToEnemy < 220f)
+                    score += 20f;
+                else if (distToEnemy < 50f)
+                    score -= 30f; // Too close is dangerous for artillery
+            }
+            // Cavalry prefers flat ground and flanking positions
+            else if (regiment.UnitData != null && regiment.UnitData.canCharge)
+            {
+                // Cavalry doesn't want steep hills — check nearby height variance
+                score -= Mathf.Abs(height - BattleManager.GetTerrainHeight(position + Vector3.forward * 10f)) * 5f;
+
+                // Prefer flanking positions (perpendicular to the enemy center axis)
+                if (enemyCount > 0)
+                {
+                    Vector3 toEnemy = (enemyCenter - position).normalized;
+                    // Score lateral offset from the direct approach
+                    Vector3 lateral = Vector3.Cross(toEnemy, Vector3.up);
+                    float lateralOffset = Mathf.Abs(Vector3.Dot(position - enemyCenter, lateral));
+                    score += lateralOffset * 0.3f; // Prefer flanking angles
+                }
+            }
+            // Infantry prefers defensive high ground
+            else
+            {
+                score += height * 1.5f;
+                // Prefer positions facing the enemy at medium range
+                if (distToEnemy > 50f && distToEnemy < 150f)
+                    score += 10f;
+            }
+
+            return score;
+        }
+
+        /// <summary>
+        /// Called during Opening phase to position forces on advantageous terrain.
+        /// </summary>
+        public void PositionForcesOnTerrain(List<Regiment> playerRegiments)
+        {
+            // Position artillery on highest available ground
+            foreach (var reg in ArtillerySupport)
+            {
+                if (reg == null || reg.CachedAliveCount <= 0) continue;
+                Vector3 bestPos = FindBestTerrainPosition(reg, playerRegiments);
+                if (Vector3.Distance(bestPos, reg.transform.position) > 10f)
+                {
+                    reg.MoveRegiment(bestPos);
+                }
+            }
+
+            // Position main line on elevated terrain
+            foreach (var reg in MainLine)
+            {
+                if (reg == null || reg.CachedAliveCount <= 0) continue;
+                Vector3 bestPos = FindBestTerrainPosition(reg, playerRegiments);
+                if (Vector3.Distance(bestPos, reg.transform.position) > 15f)
+                {
+                    reg.MoveRegiment(bestPos);
+                }
+            }
+
+            // Cavalry to flanking positions
+            foreach (var reg in FlankingForce)
+            {
+                if (reg == null || reg.CachedAliveCount <= 0) continue;
+                Vector3 bestPos = FindBestTerrainPosition(reg, playerRegiments);
+                if (Vector3.Distance(bestPos, reg.transform.position) > 15f)
+                {
+                    reg.MoveRegiment(bestPos);
+                }
+            }
         }
 
         private float GetAverageArmyDistance(List<Regiment> army1, List<Regiment> army2)

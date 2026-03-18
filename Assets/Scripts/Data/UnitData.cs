@@ -106,6 +106,8 @@ namespace NapoleonicWars.Data
         public float rearDamageMultiplier = 2f;
         public bool canCharge = false;
         public float chargeSpeedMultiplier = 1.8f;
+        public float chargeImpactRadius = 5f;         // Area of effect for charge morale shock
+        public float chargeMomentumScaling = 30f;     // Distance for full charge bonus (damage scales with distance charged)
 
         [Header("Volley Fire")]
         public bool canVolleyFire = true;
@@ -133,6 +135,28 @@ namespace NapoleonicWars.Data
         public int maxAmmo = 40;                        // Musket rounds per soldier
         public bool hasUnlimitedAmmo = false;           // Artillery resupply etc.
         public float splashRadius = 0f;                 // For artillery area damage
+
+        [Header("Artillery - Canister Shot")]
+        public float canisterRange = 60f;               // Range at which artillery auto-switches to canister
+        public int canisterPellets = 12;                 // Number of projectiles in canister cone
+        public float canisterDamage = 8f;                // Damage per canister pellet
+        public float canisterConeAngle = 15f;            // Spread angle in degrees
+        public float canisterSuppression = 25f;          // Massive suppression from canister
+
+        [Header("Artillery - Limber/Unlimber")]
+        public float limberedSpeedMultiplier = 2.5f;     // Speed multiplier when limbered (hitched to horses)
+        public float limberTransitionTime = 4f;          // Seconds to limber/unlimber
+
+        [Header("Skirmisher")]
+        public float skirmishDamageReduction = 0.25f;   // 25% less ranged damage taken in skirmish
+        public float skirmishFireOnMoveAccuracy = 0.5f;  // 50% accuracy when firing while moving
+        public bool canSkirmish = false;                  // Only light infantry types can skirmish
+
+        [Header("Suppression")]
+        public float suppressionResistance = 0f;        // 0 = normal, 0.5 = elite resists 50% suppression
+        public float suppressionRecoveryRate = 8f;       // Suppression decay per second
+        public float suppressionPerHit = 12f;             // Suppression gained when hit
+        public float suppressionPerNearMiss = 5f;         // Suppression from nearby shots
 
         [Header("Experience")]
         public float startingExperience = 0f;           // 0-100

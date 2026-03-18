@@ -49,6 +49,7 @@ namespace NapoleonicWars.Units
         private float cachedAverageMorale;
         private float cachedAverageStamina;
         private int cachedTotalAmmo;
+        private float cachedAverageSuppression;
 
         // Pooled alive list to avoid GC allocations
         private List<UnitBase> pooledAliveList = new List<UnitBase>(64);
@@ -65,6 +66,7 @@ namespace NapoleonicWars.Units
         public string RegimentName => regimentName;
         public UnitData UnitData => unitData;
         public FormationType CurrentFormation => currentFormation;
+        public bool IsSkirmishing => currentFormation == FormationType.Skirmish;
         public float UnitSpacing => unitSpacing;
         public float RowSpacing => rowSpacing;
         public List<UnitBase> Units => units;
@@ -83,11 +85,23 @@ namespace NapoleonicWars.Units
         public int RegimentRankIndex { get; private set; } = 0;
         public RegimentRank RegimentRankEnum => (RegimentRank)RegimentRankIndex;
 
+        // === ARTILLERY LIMBER SYSTEM ===
+        private bool isLimbered = false;
+        private float limberTransitionTimer = 0f;
+        private bool isTransitioningLimber = false;
+        public bool IsLimbered => isLimbered;
+        public bool IsTransitioningLimber => isTransitioningLimber;
+        public bool IsArtillery => unitData != null && (unitData.unitType == UnitType.Artillery
+            || unitData.unitType == UnitType.HorseArtillery || unitData.unitType == UnitType.GarrisonCannon
+            || unitData.unitType == UnitType.Howitzer || unitData.unitType == UnitType.GrandBattery
+            || unitData.unitType == UnitType.GuardArtillery);
+
         /// <summary>Cached alive count, updated every 0.3s. Use for non-critical reads.</summary>
         public int CachedAliveCount => cachedAliveCount;
         public float CachedAverageMorale => cachedAverageMorale;
         public float CachedAverageStamina => cachedAverageStamina;
         public int CachedTotalAmmo => cachedTotalAmmo;
+        public float CachedAverageSuppression => cachedAverageSuppression;
 
         public int AliveCount
         {
@@ -121,6 +135,13 @@ namespace NapoleonicWars.Units
 
         private void Update()
         {
+            // Artillery limber/unlimber transition
+            if (IsArtillery)
+                UpdateLimberTransition();
+
+            // Bayonet shock timer
+            UpdateBayonetShock();
+
             // Periodically refresh cached alive count
             aliveCountTimer -= Time.deltaTime;
             if (aliveCountTimer <= 0f)
@@ -130,6 +151,7 @@ namespace NapoleonicWars.Units
                 float totalMorale = 0f;
                 float totalStamina = 0f;
                 int totalAmmo = 0;
+                float totalSuppression = 0f;
                 for (int i = 0; i < units.Count; i++)
                 {
                     var u = units[i];
@@ -139,12 +161,14 @@ namespace NapoleonicWars.Units
                         totalMorale += u.CurrentMorale;
                         totalStamina += u.StaminaPercent;
                         totalAmmo += u.CurrentAmmo;
+                        totalSuppression += u.CurrentSuppression;
                     }
                 }
                 cachedAliveCount = count;
                 cachedAverageMorale = count > 0 ? totalMorale / count : 0f;
                 cachedAverageStamina = count > 0 ? totalStamina / count : 0f;
                 cachedTotalAmmo = totalAmmo;
+                cachedAverageSuppression = count > 0 ? totalSuppression / count : 0f;
             }
             
             // Rigid Body Formation Movement
@@ -247,6 +271,10 @@ namespace NapoleonicWars.Units
                 unit.SetUnitData(data);
                 unit.Regiment = this;
                 unit.TeamId = teamId;
+
+                // First unit is the officer
+                if (i == 0 && data.hasOfficer)
+                    unit.IsOfficer = true;
 
                 units.Add(unit);
             }
@@ -1292,12 +1320,33 @@ namespace NapoleonicWars.Units
             }
         }
 
+        // === BAYONET CHARGE SHOCK SYSTEM ===
+        private float chargeStartTime = -1f;
+        private int chargeImpactCount = 0;
+        private float bayonetShockTimer = 0f;
+        private bool bayonetShockActive = false;
+
+        /// <summary>Bayonet shock multiplier: 1.5x melee damage when active.</summary>
+        public float BayonetShockMultiplier => bayonetShockActive ? 1.5f : 1f;
+
         public void ChargeTargetRegiment(Regiment enemyRegiment)
         {
             if (unitData != null && !unitData.canCharge)
             {
                 AttackTargetRegiment(enemyRegiment);
                 return;
+            }
+
+            // Start tracking bayonet charge coordination
+            chargeStartTime = Time.time;
+            chargeImpactCount = 0;
+            bayonetShockActive = false;
+
+            // Boost morale on charge order (+15 temporary)
+            foreach (var unit in units)
+            {
+                if (unit != null && unit.CurrentState != UnitState.Dead)
+                    unit.RestoreMorale(15f);
             }
 
             List<UnitBase> aliveUnits = GetAliveUnits();
@@ -1309,6 +1358,50 @@ namespace NapoleonicWars.Units
             {
                 UnitBase target = enemyAlive[i % enemyAlive.Count];
                 aliveUnits[i].ChargeTarget(target);
+            }
+        }
+
+        /// <summary>
+        /// Called by a unit when it impacts during a charge. Tracks coordinated impacts.
+        /// If 50%+ of the regiment impacts within 2 seconds, triggers bayonet shock bonus.
+        /// </summary>
+        public void RegisterChargeImpact()
+        {
+            if (chargeStartTime < 0f) return;
+
+            chargeImpactCount++;
+
+            // Check if 50% of alive units have impacted within the time window
+            float timeSinceCharge = Time.time - chargeStartTime;
+            if (timeSinceCharge <= 3f && chargeImpactCount >= cachedAliveCount * 0.5f && !bayonetShockActive)
+            {
+                // Coordinated bayonet shock! +50% melee damage for 5 seconds
+                bayonetShockActive = true;
+                bayonetShockTimer = 5f;
+
+                if (NapoleonicWars.UI.BattleLogUI.Instance != null)
+                {
+                    string msg = $"{regimentName}: BAYONET SHOCK! Coordinated charge impact!";
+                    if (TeamId == 0)
+                        NapoleonicWars.UI.BattleLogUI.Instance.LogPlayerEvent(msg);
+                    else
+                        NapoleonicWars.UI.BattleLogUI.Instance.LogEnemyEvent(msg);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Tick down bayonet shock timer. Called from Update.
+        /// </summary>
+        private void UpdateBayonetShock()
+        {
+            if (!bayonetShockActive) return;
+            bayonetShockTimer -= Time.deltaTime;
+            if (bayonetShockTimer <= 0f)
+            {
+                bayonetShockActive = false;
+                chargeStartTime = -1f;
+                chargeImpactCount = 0;
             }
         }
 
@@ -1324,8 +1417,9 @@ namespace NapoleonicWars.Units
         }
 
         /// <summary>
-        /// Rally fleeing units — restore some morale and return them to Idle.
-        /// Only works if the officer is alive. Cooldown managed externally.
+        /// Rally retreating units — restore morale and return them to Idle.
+        /// Only works on Retreating units (orderly withdrawal). Routed (Fleeing) units cannot be rallied.
+        /// Officer alive provides a stronger morale boost.
         /// </summary>
         public int Rally()
         {
@@ -1334,12 +1428,16 @@ namespace NapoleonicWars.Units
 
             foreach (var unit in units)
             {
-                if (unit != null && unit.CurrentState == UnitState.Fleeing)
+                if (unit == null) continue;
+
+                // Only retreating units can be rallied — routed units are broken
+                if (unit.CurrentState == UnitState.Retreating)
                 {
                     unit.RestoreMorale(moraleBoost);
                     unit.ForceState(UnitState.Idle);
                     rallied++;
                 }
+                // Routed units: cannot rally, but log it if attempted
             }
 
             if (rallied > 0 && NapoleonicWars.UI.BattleLogUI.Instance != null)
@@ -1350,8 +1448,96 @@ namespace NapoleonicWars.Units
                 else
                     NapoleonicWars.UI.BattleLogUI.Instance.LogEnemyEvent(msg);
             }
+            else if (rallied == 0 && NapoleonicWars.UI.BattleLogUI.Instance != null)
+            {
+                // Check if there are routed units that cannot be rallied
+                int routed = 0;
+                foreach (var unit in units)
+                {
+                    if (unit != null && unit.CurrentState == UnitState.Fleeing)
+                        routed++;
+                }
+                if (routed > 0)
+                {
+                    string msg = $"{regimentName}: {routed} units routed — cannot be rallied!";
+                    if (TeamId == 0)
+                        NapoleonicWars.UI.BattleLogUI.Instance.LogPlayerEvent(msg);
+                    else
+                        NapoleonicWars.UI.BattleLogUI.Instance.LogEnemyEvent(msg);
+                }
+            }
 
             return rallied;
+        }
+
+        // === ARTILLERY LIMBER/UNLIMBER ===
+
+        /// <summary>
+        /// Toggle between limbered (mobile, cannot fire) and unlimbered (stationary, can fire).
+        /// Only applies to artillery regiments. Transition takes several seconds.
+        /// </summary>
+        public void ToggleLimber()
+        {
+            if (!IsArtillery || isTransitioningLimber) return;
+
+            isTransitioningLimber = true;
+            limberTransitionTimer = unitData != null ? unitData.limberTransitionTime : 4f;
+
+            if (NapoleonicWars.UI.BattleLogUI.Instance != null)
+            {
+                string action = isLimbered ? "unlimbering" : "limbering up";
+                string msg = $"{regimentName}: {action}...";
+                if (TeamId == 0)
+                    NapoleonicWars.UI.BattleLogUI.Instance.LogPlayerEvent(msg);
+                else
+                    NapoleonicWars.UI.BattleLogUI.Instance.LogEnemyEvent(msg);
+            }
+        }
+
+        /// <summary>
+        /// Called from Update to tick the limber transition timer.
+        /// </summary>
+        private void UpdateLimberTransition()
+        {
+            if (!isTransitioningLimber) return;
+
+            limberTransitionTimer -= Time.deltaTime;
+            if (limberTransitionTimer <= 0f)
+            {
+                isTransitioningLimber = false;
+                isLimbered = !isLimbered;
+
+                if (NapoleonicWars.UI.BattleLogUI.Instance != null)
+                {
+                    string state = isLimbered ? "limbered (mobile)" : "unlimbered (ready to fire)";
+                    string msg = $"{regimentName}: {state}";
+                    if (TeamId == 0)
+                        NapoleonicWars.UI.BattleLogUI.Instance.LogPlayerEvent(msg);
+                    else
+                        NapoleonicWars.UI.BattleLogUI.Instance.LogEnemyEvent(msg);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Returns the effective speed multiplier considering limber state.
+        /// Limbered artillery moves much faster. Unlimbered cannot move.
+        /// </summary>
+        public float GetLimberSpeedMultiplier()
+        {
+            if (!IsArtillery) return 1f;
+            if (isTransitioningLimber) return 0f; // Can't move during transition
+            if (isLimbered) return unitData != null ? unitData.limberedSpeedMultiplier : 2.5f;
+            return 0f; // Unlimbered artillery cannot move (except rotate)
+        }
+
+        /// <summary>
+        /// Returns true if this artillery regiment can fire (unlimbered and not transitioning).
+        /// </summary>
+        public bool CanArtilleryFire()
+        {
+            if (!IsArtillery) return true; // Non-artillery always can fire
+            return !isLimbered && !isTransitioningLimber;
         }
 
         public void SetSelected(bool selected)

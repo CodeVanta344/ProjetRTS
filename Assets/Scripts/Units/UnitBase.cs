@@ -11,7 +11,8 @@ namespace NapoleonicWars.Units
         Moving,
         Charging,
         Attacking,
-        Fleeing,
+        Retreating,  // Orderly withdrawal - can be rallied
+        Fleeing,      // Full rout - cannot be rallied
         Dead
     }
 
@@ -70,6 +71,12 @@ namespace NapoleonicWars.Units
         // Cover system
         private bool isInCover = false;
 
+        // Officer flag — the first unit in a regiment is the officer
+        public bool IsOfficer { get; set; } = false;
+
+        // Suppression system
+        private float currentSuppression = 0f;  // 0-100, reduces effectiveness under fire
+
         // Public accessors
         public UnitData Data => unitData;
         public float CurrentHealth => currentHealth;
@@ -87,6 +94,11 @@ namespace NapoleonicWars.Units
         public Regiment Regiment { get; set; }
         public int TeamId { get; set; } = 0;
         public Vector3 TargetPosition => targetPosition;
+        public bool IsRetreating => currentState == UnitState.Retreating;
+        public bool IsRouted => currentState == UnitState.Fleeing;
+        public bool CanBeRallied => currentState == UnitState.Retreating;
+        public float CurrentSuppression => currentSuppression;
+        public float SuppressionPercent => currentSuppression / 100f;
 
         // Volley fire state
         private bool isKneeling = false;
@@ -222,13 +234,23 @@ namespace NapoleonicWars.Units
         public float GetEffectiveAccuracy()
         {
             if (unitData == null) return 0.75f;
-            return Mathf.Clamp01(unitData.accuracy + cachedAccuracyBonus + rankMods.accuracyBonus);
+            float acc = Mathf.Clamp01(unitData.accuracy + cachedAccuracyBonus + rankMods.accuracyBonus);
+            // Weather affects accuracy (rain degrades musket fire, fog limits visibility, etc.)
+            if (WeatherSystem.Instance != null)
+                acc *= WeatherSystem.Instance.AccuracyModifier;
+            return Mathf.Clamp01(acc);
         }
         
         public float GetEffectiveMoveSpeed()
         {
             if (unitData == null) return 3.5f;
-            return unitData.moveSpeed * cachedSpeedMultiplier * rankMods.speedMultiplier * GetFatigueMultiplier(unitData.fatigueSpeedPenalty);
+            float speed = unitData.moveSpeed * cachedSpeedMultiplier * rankMods.speedMultiplier * GetFatigueMultiplier(unitData.fatigueSpeedPenalty);
+            // Weather affects movement speed (snow slows troops, mud from rain, etc.)
+            if (WeatherSystem.Instance != null)
+                speed *= WeatherSystem.Instance.MovementModifier;
+            // Suppression slows movement (troops take cover, hesitate to advance)
+            speed *= Mathf.Lerp(1f, 0.7f, currentSuppression / 100f);
+            return speed;
         }
         
         public float GetEffectiveMaxMorale()
@@ -312,6 +334,9 @@ namespace NapoleonicWars.Units
                 case UnitState.Charging:
                     UpdateCharging(dt);
                     break;
+                case UnitState.Retreating:
+                    UpdateRetreating(dt);
+                    break;
                 case UnitState.Fleeing:
                     UpdateFleeing(dt);
                     break;
@@ -346,6 +371,7 @@ namespace NapoleonicWars.Units
                 UpdateMorale();
                 UpdateStamina();
                 UpdateVolleyTimer();
+                UpdateSuppression(0.25f);
             }
         }
 
@@ -630,26 +656,88 @@ namespace NapoleonicWars.Units
             float ez = targetEnemy.transform.position.z - transform.position.z;
             float distSqr = ex * ex + ez * ez;
 
+            // === SKIRMISHER AUTO-EVADE ===
+            // Skirmishers automatically evade when charged by non-skirmish units
+            if (distSqr < 225f && distSqr > 4f) // Within 15m but not yet in melee
+            {
+                if (targetEnemy.Regiment != null && targetEnemy.Regiment.IsSkirmishing
+                    && targetEnemy.Data != null && targetEnemy.Data.canSkirmish)
+                {
+                    // Target is a skirmisher — they evade to the side
+                    float invDist = 1f / Mathf.Sqrt(distSqr);
+                    Vector3 chargeDir = new Vector3(ex * invDist, 0f, ez * invDist);
+                    // Perpendicular direction (evade sideways)
+                    Vector3 evadeDir = new Vector3(-chargeDir.z, 0f, chargeDir.x);
+                    // Randomize which side
+                    if (Random.value > 0.5f) evadeDir = -evadeDir;
+
+                    float evadeSpeed = targetEnemy.Data.runSpeed * dt;
+                    Vector3 evadePos = targetEnemy.transform.position + evadeDir * evadeSpeed;
+                    targetEnemy.transform.position = evadePos;
+
+                    // Skirmisher loses target and goes back to idle to re-engage
+                    targetEnemy.ForceState(UnitState.Idle);
+                }
+            }
+
             if (distSqr < 4f) // 2^2
             {
-                // Impact! Apply charge bonus damage
+                // === IMPACT! Enhanced charge mechanics ===
                 float chargeBonus = unitData != null ? unitData.chargeBonusDamage : 20f;
                 float meleeDmg = unitData != null ? unitData.meleeDamage : 15f;
+
+                // Charge damage scales with distance charged (momentum)
+                float momentumScale = unitData != null ? unitData.chargeMomentumScaling : 30f;
+                float currentDist = Mathf.Sqrt(distSqr);
+                float distanceCharged = chargeStartDistance - currentDist;
+                float momentumMultiplier = Mathf.Clamp01(distanceCharged / momentumScale);
+                // Full charge bonus at max distance, reduced if charge was short
+                chargeBonus *= (0.3f + 0.7f * momentumMultiplier);
 
                 AttackDirection atkDir = GetAttackDirection(targetEnemy);
                 float dirMultiplier = GetDirectionMultiplier(atkDir);
 
                 float totalDamage = (meleeDmg + chargeBonus) * dirMultiplier;
+
+                // Square formation halves charge damage and negates momentum bonus
+                if (targetEnemy.Regiment != null && targetEnemy.Regiment.CurrentFormation == FormationType.Square)
+                {
+                    totalDamage *= 0.5f;
+                }
+
                 targetEnemy.TakeDamage(totalDamage, this);
 
-                // Charge morale shock to target regiment
+                // === AREA OF EFFECT MORALE SHOCK ===
+                // All enemy units within impact radius suffer morale damage
+                float impactRadius = unitData != null ? unitData.chargeImpactRadius : 5f;
+                float moraleLoss = unitData != null ? unitData.moraleLossOnCharged : 15f;
+                // Scale morale shock with momentum
+                moraleLoss *= (0.5f + 0.5f * momentumMultiplier);
+
                 if (targetEnemy.Regiment != null)
                 {
-                    float moraleLoss = unitData != null ? unitData.moraleLossOnCharged : 15f;
+                    // Apply morale shock to the target regiment
                     targetEnemy.Regiment.ApplyMoraleShock(moraleLoss);
+
+                    // Apply suppression to nearby enemies (the shock of a cavalry charge)
+                    foreach (var unit in targetEnemy.Regiment.Units)
+                    {
+                        if (unit == null || unit.CurrentState == UnitState.Dead) continue;
+                        float dx = unit.transform.position.x - transform.position.x;
+                        float dz = unit.transform.position.z - transform.position.z;
+                        if (dx * dx + dz * dz < impactRadius * impactRadius)
+                        {
+                            unit.ApplySuppression(20f * momentumMultiplier);
+                        }
+                    }
                 }
 
                 MuzzleFlashEffect.Create(transform.position, transform.forward);
+
+                // Register charge impact for bayonet shock tracking
+                if (Regiment != null)
+                    Regiment.RegisterChargeImpact();
+
                 currentState = UnitState.Attacking;
                 return;
             }
@@ -749,6 +837,46 @@ namespace NapoleonicWars.Units
 
         private Vector3 cachedFleeDir;
 
+        private void UpdateRetreating(float dt)
+        {
+            // Orderly retreat: move away from enemy at normal speed (not run speed)
+            // Can still be rallied by officers
+            enemySearchTimer -= dt;
+            if (enemySearchTimer <= 0f)
+            {
+                enemySearchTimer = 0.5f;
+                UnitBase nearestEnemy = FindNearestEnemy();
+                if (nearestEnemy != null)
+                {
+                    float fx = transform.position.x - nearestEnemy.transform.position.x;
+                    float fz = transform.position.z - nearestEnemy.transform.position.z;
+                    float fDist = Mathf.Sqrt(fx * fx + fz * fz);
+                    if (fDist > 0.01f)
+                        cachedFleeDir = new Vector3(fx / fDist, 0f, fz / fDist);
+                }
+            }
+
+            if (cachedFleeDir.sqrMagnitude > 0.01f)
+            {
+                // Retreating units move at normal speed, not run speed
+                float speed = unitData != null ? unitData.moveSpeed : 3.5f;
+                speed *= GetFatigueMultiplier(unitData != null ? unitData.fatigueSpeedPenalty : 0.4f);
+
+                Vector3 pos = transform.position;
+                pos.x += cachedFleeDir.x * speed * dt;
+                pos.z += cachedFleeDir.z * speed * dt;
+                transform.position = pos;
+                transform.forward = Vector3.Lerp(transform.forward, cachedFleeDir, dt * 5f);
+
+                terrainSnapTimer -= dt;
+                if (terrainSnapTimer <= 0f)
+                {
+                    terrainSnapTimer = 0.5f;
+                    SnapToTerrainSmooth();
+                }
+            }
+        }
+
         private void UpdateFleeing(float dt)
         {
             // Throttle enemy search while fleeing — every 0.5s
@@ -804,6 +932,10 @@ namespace NapoleonicWars.Units
             float fatigueMult = GetFatigueMultiplier(unitData != null ? unitData.fatigueMoralePenalty : 0.5f);
             recoveryRate *= fatigueMult;
 
+            // Weather affects morale recovery (storms demoralize troops, etc.)
+            if (WeatherSystem.Instance != null)
+                recoveryRate *= WeatherSystem.Instance.MoraleModifier;
+
             // Experience boosts max morale
             if (unitData != null)
                 maxMorale += unitData.experienceMoraleBonus * (experience / 100f);
@@ -813,6 +945,13 @@ namespace NapoleonicWars.Units
             {
                 recoveryRate += unitData.officerRecoveryBonus;
                 fleeThreshold = Mathf.Max(fleeThreshold - unitData.officerMoraleBonus * 0.5f, 5f);
+            }
+
+            // Terrain height morale bonus: troops on high ground feel more confident
+            if (transform.position.y > 5f)
+            {
+                float heightMoraleBonus = Mathf.Clamp(transform.position.y * 0.1f, 0f, 3f);
+                recoveryRate += heightMoraleBonus;
             }
 
             // Recover morale when not in combat
@@ -833,7 +972,25 @@ namespace NapoleonicWars.Units
                 }
             }
 
-            if (currentMorale <= fleeThreshold && currentState != UnitState.Fleeing && currentState != UnitState.Dead)
+            // === RETREAT vs ROUT ===
+            // Morale below flee threshold: orderly retreat (can be rallied)
+            // Morale below half flee threshold: full rout (cannot be rallied, unit is broken)
+            float routThreshold = fleeThreshold * 0.5f;
+
+            if (currentMorale <= routThreshold && currentState != UnitState.Fleeing && currentState != UnitState.Dead)
+            {
+                // Full rout — broken, cannot be rallied
+                currentState = UnitState.Fleeing;
+            }
+            else if (currentMorale <= fleeThreshold && currentState != UnitState.Retreating
+                     && currentState != UnitState.Fleeing && currentState != UnitState.Dead)
+            {
+                // Orderly retreat — can still be rallied by officers
+                currentState = UnitState.Retreating;
+            }
+
+            // A retreating unit that keeps losing morale transitions to full rout
+            if (currentState == UnitState.Retreating && currentMorale <= routThreshold)
             {
                 currentState = UnitState.Fleeing;
             }
@@ -860,6 +1017,9 @@ namespace NapoleonicWars.Units
                 case UnitState.Attacking:
                     drain = unitData.staminaDrainCombat;
                     break;
+                case UnitState.Retreating:
+                    drain = unitData.staminaDrainWalk;
+                    break;
                 case UnitState.Fleeing:
                     drain = unitData.staminaDrainRun;
                     break;
@@ -877,6 +1037,47 @@ namespace NapoleonicWars.Units
             if (unitData == null) return 1f;
             float t = currentStamina / unitData.maxStamina;
             return Mathf.Lerp(fatigueMinValue, 1f, t);
+        }
+
+        // === SUPPRESSION SYSTEM ===
+        private void UpdateSuppression(float dt)
+        {
+            if (currentSuppression <= 0f) return;
+
+            // Suppression decays over time
+            float recovery = unitData != null ? unitData.suppressionRecoveryRate : 8f;
+            currentSuppression = Mathf.Max(currentSuppression - recovery * dt, 0f);
+
+            // High suppression amplifies morale loss
+            if (currentSuppression > 50f)
+            {
+                float moralePressure = (currentSuppression - 50f) * 0.02f * dt;
+                currentMorale = Mathf.Max(currentMorale - moralePressure, 0f);
+            }
+        }
+
+        /// <summary>
+        /// Apply suppression to this unit (called when hit or near-missed).
+        /// Suppressed units have reduced accuracy, speed, and faster morale decay.
+        /// </summary>
+        public void ApplySuppression(float amount)
+        {
+            if (currentState == UnitState.Dead) return;
+
+            // Elite units resist suppression
+            float resistance = unitData != null ? unitData.suppressionResistance : 0f;
+            float effectiveAmount = amount * (1f - resistance);
+
+            currentSuppression = Mathf.Min(currentSuppression + effectiveAmount, 100f);
+        }
+
+        /// <summary>
+        /// Returns a multiplier (0.5 to 1.0) based on current suppression level.
+        /// Fully suppressed units operate at 50% effectiveness.
+        /// </summary>
+        private float GetSuppressionMultiplier()
+        {
+            return 1f - (currentSuppression * 0.005f); // 0 suppression = 1.0, 100 suppression = 0.5
         }
 
         public void GainExperience(float amount)
@@ -924,6 +1125,11 @@ namespace NapoleonicWars.Units
             if (BattleManager.Instance != null && BattleManager.Instance.IsDeploymentPhase)
                 return;
 
+            // === ARTILLERY LIMBER CHECK ===
+            // Limbered artillery cannot fire — must unlimber first
+            if (Regiment != null && Regiment.IsArtillery && !Regiment.CanArtilleryFire())
+                return;
+
             // Check ammunition for ranged attacks
             bool isRanged = cachedIsRanged;
 
@@ -946,7 +1152,45 @@ namespace NapoleonicWars.Units
                     return;
                 }
             }
-            
+
+            // === FRIENDLY FIRE CHECK / LINE OF SIGHT ===
+            // If a friendly unit is in the line of fire, hold fire to avoid shooting through allies
+            if (isRanged && SpatialGrid.Instance != null)
+            {
+                // Check for friendly units between this unit and the target (within a narrow corridor)
+                float checkRadius = 3f; // Width of the firing corridor
+                Vector3 midPoint = (transform.position + target.transform.position) * 0.5f;
+                float halfDist = Vector3.Distance(transform.position, target.transform.position) * 0.5f;
+                var nearbyUnits = SpatialGrid.Instance.GetNearbyUnits(midPoint, halfDist);
+                Vector3 fireDir = (target.transform.position - transform.position).normalized;
+                float fireDist = Vector3.Distance(transform.position, target.transform.position);
+
+                for (int i = 0; i < nearbyUnits.Count; i++)
+                {
+                    var u = nearbyUnits[i];
+                    if (u == null || u == this || u == target) continue;
+                    if (u.TeamId != TeamId) continue; // Only check friendlies
+                    if (u.CurrentState == UnitState.Dead) continue;
+
+                    // Project the friendly onto the firing line
+                    Vector3 toFriendly = u.transform.position - transform.position;
+                    float projDist = Vector3.Dot(toFriendly, fireDir);
+
+                    // Must be between shooter and target (not behind or beyond)
+                    if (projDist < 2f || projDist > fireDist - 1f) continue;
+
+                    // Check perpendicular distance to firing line
+                    Vector3 closestOnLine = transform.position + fireDir * projDist;
+                    float perpDist = Vector3.Distance(u.transform.position, closestOnLine);
+
+                    if (perpDist < checkRadius)
+                    {
+                        // Friendly in the way — hold fire
+                        return;
+                    }
+                }
+            }
+
             // === MELEE SWITCH: If enemy is very close, use bayonets/melee instead of shooting ===
             // Compute distance once — reused for melee check AND accuracy falloff below
             float tdx = target.transform.position.x - transform.position.x;
@@ -973,14 +1217,43 @@ namespace NapoleonicWars.Units
             float damage = isRanged
                 ? GetEffectiveAttackDamage()
                 : (unitData != null ? unitData.meleeDamage : 15f);
+
+            // === BAYONET SHOCK BONUS ===
+            // If regiment achieved coordinated charge impact, melee damage is boosted
+            if (!isRanged && Regiment != null)
+                damage *= Regiment.BayonetShockMultiplier;
+
             float accuracy = GetEffectiveAccuracy();
 
             // Consume ammo for ranged attacks
             if (isRanged && unitData != null && !unitData.hasUnlimitedAmmo)
                 currentAmmo = Mathf.Max(currentAmmo - 1, 0);
 
+            // === COMBAT FATIGUE ===
+            // Each attack drains stamina — sustained fire progressively degrades accuracy
+            float combatStaminaCost = isRanged ? 0.5f : 0.8f; // Melee is more exhausting
+            currentStamina = Mathf.Max(currentStamina - combatStaminaCost, 0f);
+
+            // === TERRAIN HEIGHT ADVANTAGE ===
+            // Shooting downhill grants accuracy bonus; shooting uphill penalizes
+            float heightDiff = transform.position.y - target.transform.position.y;
+            if (heightDiff > 1f)
+            {
+                // Shooting downhill: up to +15% accuracy bonus
+                accuracy += Mathf.Clamp(heightDiff * 0.02f, 0f, 0.15f);
+            }
+            else if (heightDiff < -1f)
+            {
+                // Shooting uphill: up to -12% accuracy penalty
+                accuracy += Mathf.Clamp(heightDiff * 0.015f, -0.12f, 0f);
+            }
+
             // Fatigue reduces accuracy
             accuracy *= GetFatigueMultiplier(unitData != null ? unitData.fatigueAccuracyPenalty : 0.3f);
+
+            // === SUPPRESSION reduces accuracy ===
+            // Suppressed units fire less accurately (ducking, flinching, panicking)
+            accuracy *= GetSuppressionMultiplier();
 
             // Experience improves accuracy
             if (unitData != null)
@@ -1048,24 +1321,81 @@ namespace NapoleonicWars.Units
             }
 
             // Spawn visible projectile tracer - use cannonball for artillery
+            bool isArtilleryUnit = unitData != null && Regiment != null && Regiment.IsArtillery;
+            bool isCanisterMode = isArtilleryUnit && distToTarget <= (unitData != null ? unitData.canisterRange : 60f);
+
             if (isRanged && ProjectileSystem.Instance != null)
             {
-                if (unitData != null && unitData.unitType == UnitType.Artillery)
+                if (isArtilleryUnit && !isCanisterMode)
                 {
-                    // Artillery: fire physical cannonball from barrel position
+                    // Artillery: fire physical cannonball from barrel position (roundshot)
                     Vector3 barrelPos = transform.position + transform.forward * 0.6f + Vector3.up * 0.4f;
                     float splashRadius = unitData.splashRadius > 0 ? unitData.splashRadius : 5f;
                     ProjectileSystem.Instance.FireCannonball(barrelPos, target.transform.position, totalDamage, splashRadius, TeamId);
-                    
+
                     // Cannon fire VFX: massive blast + smoke ring
                     if (AdvancedParticleManager.Instance != null)
                         AdvancedParticleManager.Instance.SpawnCannonFire(barrelPos, transform.forward);
+                }
+                else if (isCanisterMode)
+                {
+                    // === CANISTER SHOT (MITRAILLE) ===
+                    // Close-range shotgun blast — multiple pellets in a cone, devastating vs infantry
+                    Vector3 barrelPos = transform.position + transform.forward * 0.6f + Vector3.up * 0.4f;
+                    int pellets = unitData.canisterPellets;
+                    float pelletDamage = unitData.canisterDamage;
+                    float coneAngle = unitData.canisterConeAngle;
+                    float canisterSupp = unitData.canisterSuppression;
+
+                    // Fire each pellet with slight random spread
+                    for (int i = 0; i < pellets; i++)
+                    {
+                        float angleOffset = Random.Range(-coneAngle, coneAngle);
+                        Vector3 spreadDir = Quaternion.Euler(0f, angleOffset, 0f) * transform.forward;
+                        Vector3 pelletTarget = target.transform.position + spreadDir * Random.Range(-2f, 2f);
+
+                        // Each pellet is a separate tracer
+                        ProjectileSystem.Instance.FireProjectile(barrelPos, pelletTarget, pelletDamage, TeamId);
+
+                        // Each pellet has independent hit chance (higher accuracy at close range)
+                        float pelletAccuracy = accuracy * 1.2f; // Canister is more accurate close up
+                        pelletAccuracy = Mathf.Clamp01(pelletAccuracy);
+
+                        if (Random.value <= pelletAccuracy && target.CurrentState != UnitState.Dead)
+                        {
+                            target.TakeDamage(pelletDamage * dirMultiplier, this);
+                            target.ApplySuppression(canisterSupp / pellets);
+                        }
+                    }
+
+                    // Massive suppression to all nearby enemies from canister blast
+                    if (target.Regiment != null)
+                    {
+                        foreach (var unit in target.Regiment.Units)
+                        {
+                            if (unit == null || unit.CurrentState == UnitState.Dead) continue;
+                            float dx = unit.transform.position.x - target.transform.position.x;
+                            float dz = unit.transform.position.z - target.transform.position.z;
+                            if (dx * dx + dz * dz < 100f) // 10m radius
+                                unit.ApplySuppression(canisterSupp * 0.5f);
+                        }
+                    }
+
+                    // Cannon fire VFX
+                    if (AdvancedParticleManager.Instance != null)
+                        AdvancedParticleManager.Instance.SpawnCannonFire(barrelPos, transform.forward);
+
+                    // Record shot
+                    if (BattleStatistics.Instance != null)
+                        BattleStatistics.Instance.RecordShotFired(Regiment != null ? Regiment.TeamId : 0);
+
+                    return; // Canister handles its own damage — skip normal hit check below
                 }
                 else
                 {
                     // Infantry: use simple tracer
                     ProjectileSystem.Instance.FireProjectile(transform.position, target.transform.position, damage, TeamId);
-                    
+
                     // Musket smoke VFX: muzzle flash + smoke plume + sparks
                     if (AdvancedParticleManager.Instance != null)
                         AdvancedParticleManager.Instance.SpawnMusketSmoke(
@@ -1074,11 +1404,14 @@ namespace NapoleonicWars.Units
                 }
             }
 
-            // Check if shot hits
+            // Check if shot hits (roundshot / musket — canister already returned above)
             if (Random.value <= accuracy)
             {
-                // === APPLY DAMAGE ===
+                // === APPLY DAMAGE + SUPPRESSION ON HIT ===
                 target.TakeDamage(totalDamage, this);
+                // Direct hit causes heavy suppression
+                float suppressionOnHit = unitData != null ? unitData.suppressionPerHit : 12f;
+                target.ApplySuppression(suppressionOnHit);
                 
                 MuzzleFlashEffect.Create(transform.position, transform.forward);
 
@@ -1115,6 +1448,13 @@ namespace NapoleonicWars.Units
                     if (atkDir == AttackDirection.Rear) flankMoraleLoss *= 1.5f;
                     target.ApplyMoraleDamage(flankMoraleLoss);
                 }
+            }
+            else if (isRanged)
+            {
+                // === NEAR MISS SUPPRESSION ===
+                // Even missed shots cause suppression — bullets whizzing by are terrifying
+                float nearMissSuppression = unitData != null ? unitData.suppressionPerNearMiss : 5f;
+                target.ApplySuppression(nearMissSuppression);
             }
         }
 
@@ -1154,11 +1494,33 @@ namespace NapoleonicWars.Units
             {
                 Vector3 attackerDir = (attacker.transform.position - transform.position).normalized;
                 float coverBonus = CoverSystem.Instance.GetCoverBonus(transform.position, attackerDir);
-                
+
                 // Apply damage reduction (coverBonus is 0-0.6, meaning 0-60% reduction)
                 damage *= (1f - coverBonus);
-                
-                // Visual feedback - cover protection (Debug.Log removed — hot path)
+            }
+
+            // === TERRAIN HEIGHT DEFENSE ===
+            // Defender on higher ground takes reduced damage (up to 15% reduction)
+            if (attacker != null)
+            {
+                float defenderHeightAdv = transform.position.y - attacker.transform.position.y;
+                if (defenderHeightAdv > 1f)
+                {
+                    float heightReduction = Mathf.Clamp(defenderHeightAdv * 0.015f, 0f, 0.15f);
+                    damage *= (1f - heightReduction);
+                }
+            }
+
+            // === SKIRMISHER DAMAGE REDUCTION ===
+            // Spread-out skirmishers are harder to hit with ranged fire
+            if (Regiment != null && Regiment.IsSkirmishing && attacker != null && unitData != null)
+            {
+                // Only reduces ranged damage (attacker is far away)
+                float distToAttacker = Vector3.Distance(transform.position, attacker.transform.position);
+                if (distToAttacker > 5f) // Not melee
+                {
+                    damage *= (1f - unitData.skirmishDamageReduction);
+                }
             }
 
             currentHealth -= damage;

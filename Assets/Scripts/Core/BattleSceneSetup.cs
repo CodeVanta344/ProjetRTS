@@ -310,6 +310,20 @@ namespace NapoleonicWars.Core
                 umlGO.AddComponent<NapoleonicWars.Units.UnitModelLoader>();
             }
 
+            // DifficultySettings (damage/accuracy multipliers per team, AI behavior flags)
+            if (DifficultySettings.Instance == null)
+            {
+                GameObject dsGO = new GameObject("DifficultySettings");
+                dsGO.AddComponent<DifficultySettings>();
+            }
+
+            // UnitTechnologySystem (caches tech bonuses per faction, avoids per-frame lookups)
+            if (NapoleonicWars.Units.UnitTechnologySystem.Instance == null)
+            {
+                GameObject utsGO = new GameObject("UnitTechnologySystem");
+                utsGO.AddComponent<NapoleonicWars.Units.UnitTechnologySystem>();
+            }
+
             // BattleManager
             if (BattleManager.Instance == null)
             {

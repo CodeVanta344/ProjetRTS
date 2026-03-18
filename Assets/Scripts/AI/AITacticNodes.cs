@@ -597,6 +597,138 @@ namespace NapoleonicWars.AI
         }
 
         // ============================================================
+        // CONDITIONS — FORMATION REACTION
+        // ============================================================
+
+        /// <summary>True if any nearby enemy cavalry is within charge range.</summary>
+        public static Condition EnemyCavalryNearby(float range = 80f)
+        {
+            return new Condition($"EnemyCavalryNearby({range})", ctx =>
+            {
+                if (ctx.BattleManager == null) return false;
+                var playerRegs = ctx.BattleManager.PlayerRegiments;
+                if (playerRegs == null) return false;
+
+                foreach (var reg in playerRegs)
+                {
+                    if (reg == null || reg.CachedAliveCount <= 0 || reg.UnitData == null) continue;
+                    if (!reg.UnitData.canCharge) continue; // Only cavalry with charge
+                    float dist = Vector3.Distance(ctx.Regiment.transform.position, reg.transform.position);
+                    if (dist < range) return true;
+                }
+                return false;
+            });
+        }
+
+        /// <summary>True if the target enemy regiment is using skirmish formation.</summary>
+        public static Condition EnemyIsSkirmishing()
+        {
+            return new Condition("EnemyIsSkirmishing", ctx =>
+                ctx.TargetRegiment != null && ctx.TargetRegiment.IsSkirmishing);
+        }
+
+        /// <summary>True if target has high suppression (vulnerable to charge).</summary>
+        public static Condition EnemyIsSuppressed(float threshold = 40f)
+        {
+            return new Condition($"EnemyIsSuppressed({threshold})", ctx =>
+                ctx.TargetRegiment != null && ctx.TargetRegiment.CachedAverageSuppression > threshold);
+        }
+
+        /// <summary>True if target artillery is unlimbered (stationary, vulnerable).</summary>
+        public static Condition EnemyArtilleryIsStationary()
+        {
+            return new Condition("EnemyArtilleryIsStationary", ctx =>
+            {
+                if (ctx.TargetRegiment == null) return false;
+                return ctx.TargetRegiment.IsArtillery && !ctx.TargetRegiment.IsLimbered;
+            });
+        }
+
+        // ============================================================
+        // ACTIONS — FORMATION REACTION
+        // ============================================================
+
+        /// <summary>Form square to counter nearby cavalry (all difficulties).</summary>
+        public static BTAction FormSquareAgainstCavalry()
+        {
+            return new BTAction("FormSquareAgainstCavalry", ctx =>
+            {
+                if (ctx.Regiment == null) return BTStatus.Failure;
+                ctx.Regiment.SetFormation(FormationType.Square);
+                return BTStatus.Success;
+            });
+        }
+
+        /// <summary>Concentrate fire on skirmishers to punch through the screen.</summary>
+        public static BTAction ConcentrateFireOnSkirmishers()
+        {
+            return new BTAction("ConcentrateFireOnSkirmishers", ctx =>
+            {
+                if (ctx.BattleManager == null || ctx.Regiment == null) return BTStatus.Failure;
+                var playerRegs = ctx.BattleManager.PlayerRegiments;
+                if (playerRegs == null) return BTStatus.Failure;
+
+                // Find nearest skirmishing enemy
+                Regiment nearestSkirmisher = null;
+                float nearestDist = float.MaxValue;
+                foreach (var reg in playerRegs)
+                {
+                    if (reg == null || reg.CachedAliveCount <= 0) continue;
+                    if (!reg.IsSkirmishing) continue;
+                    float dist = Vector3.Distance(ctx.Regiment.transform.position, reg.transform.position);
+                    if (dist < nearestDist)
+                    {
+                        nearestDist = dist;
+                        nearestSkirmisher = reg;
+                    }
+                }
+
+                if (nearestSkirmisher != null && nearestDist < 100f)
+                {
+                    ctx.TargetRegiment = nearestSkirmisher;
+                    ctx.Regiment.SetVolleyMode(true);
+                    ctx.Regiment.AttackTargetRegiment(nearestSkirmisher);
+                    return BTStatus.Success;
+                }
+                return BTStatus.Failure;
+            });
+        }
+
+        /// <summary>Send cavalry to flank and destroy stationary artillery.</summary>
+        public static BTAction HuntEnemyArtillery()
+        {
+            return new BTAction("HuntEnemyArtillery", ctx =>
+            {
+                if (ctx.BattleManager == null || ctx.Regiment == null) return BTStatus.Failure;
+                var playerRegs = ctx.BattleManager.PlayerRegiments;
+                if (playerRegs == null) return BTStatus.Failure;
+
+                // Find nearest enemy artillery
+                Regiment nearestArtillery = null;
+                float nearestDist = float.MaxValue;
+                foreach (var reg in playerRegs)
+                {
+                    if (reg == null || reg.CachedAliveCount <= 0) continue;
+                    if (!reg.IsArtillery) continue;
+                    float dist = Vector3.Distance(ctx.Regiment.transform.position, reg.transform.position);
+                    if (dist < nearestDist)
+                    {
+                        nearestDist = dist;
+                        nearestArtillery = reg;
+                    }
+                }
+
+                if (nearestArtillery != null)
+                {
+                    ctx.TargetRegiment = nearestArtillery;
+                    ctx.Regiment.ChargeTargetRegiment(nearestArtillery);
+                    return BTStatus.Success;
+                }
+                return BTStatus.Failure;
+            });
+        }
+
+        // ============================================================
         // COMPOSITE TACTICS — Difficulty-gated
         // ============================================================
 
@@ -615,6 +747,19 @@ namespace NapoleonicWars.AI
                     DifficultyAtLeast(AIDifficulty.Legendary),
                     EnemyIsFlankingUs(),
                     CounterFlank()
+                ),
+                // ANTI-CAVALRY: form square when enemy cavalry is near (Normal+)
+                new Sequence("AntiCavalrySquare",
+                    DifficultyAtLeast(AIDifficulty.Normal),
+                    EnemyCavalryNearby(60f),
+                    FormSquareAgainstCavalry()
+                ),
+                // ANTI-SKIRMISHER: concentrate fire on skirmish screens (Hard+)
+                new Sequence("AntiSkirmisher",
+                    DifficultyAtLeast(AIDifficulty.Hard),
+                    HasTarget(),
+                    EnemyIsSkirmishing(),
+                    ConcentrateFireOnSkirmishers()
                 ),
                 // CRISIS: form square
                 new Sequence("CrisisSquare",
@@ -657,6 +802,22 @@ namespace NapoleonicWars.AI
                     DifficultyAtLeast(AIDifficulty.Hard),
                     PhaseIs(BattlePhase.Pursuit),
                     PursueRoutingEnemy()
+                ),
+                // HUNT ARTILLERY: prioritize destroying enemy guns (Hard+)
+                new Sequence("HuntArtillery",
+                    DifficultyAtLeast(AIDifficulty.Hard),
+                    StaminaAbove(0.5f),
+                    MoraleAbove(50f),
+                    HuntEnemyArtillery()
+                ),
+                // EXPLOIT SUPPRESSION: charge suppressed enemies (Normal+)
+                new Sequence("ExploitSuppression",
+                    DifficultyAtLeast(AIDifficulty.Normal),
+                    HasTarget(),
+                    EnemyIsSuppressed(40f),
+                    IsInRange(60f),
+                    StaminaAbove(0.3f),
+                    Charge()
                 ),
                 // FEIGNED RETREAT (Legendary)
                 new Sequence("FeintSequence",
